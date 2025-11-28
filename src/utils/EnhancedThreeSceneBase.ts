@@ -32,9 +32,34 @@ export class EnhancedThreeSceneBase {
 
   // 动画回调集合
   protected animationCallbacks: Array<() => void> = [];
+  
+  // 清理回调集合
+  protected cleanupCallbacks: Array<() => void> = [];
 
   constructor(container: HTMLElement) {
     this.container = container;
+  }
+  
+  /**
+   * 添加清理回调函数
+   * @param callback 清理回调函数
+   */
+  public addCleanupCallback(callback: () => void): void {
+    this.cleanupCallbacks.push(callback);
+  }
+  
+  /**
+   * 移除清理回调函数
+   * @param callback 要移除的清理回调函数
+   * @returns 是否成功移除
+   */
+  public removeCleanupCallback(callback: () => void): boolean {
+    const index = this.cleanupCallbacks.indexOf(callback);
+    if (index !== -1) {
+      this.cleanupCallbacks.splice(index, 1);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -214,6 +239,10 @@ export class EnhancedThreeSceneBase {
   public dispose(): void {
     // 停止动画
     this.stopAnimation();
+    
+    // 执行所有清理回调
+    this.cleanupCallbacks.forEach(callback => callback());
+    this.cleanupCallbacks = [];
 
     // 清理所有模型管理器
     this.modelManagers.forEach(manager => {

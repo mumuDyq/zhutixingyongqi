@@ -77,7 +77,18 @@ export class EnhancedThreeSceneBase {
       0.1,
       1000
     );
-    this.camera.position.z = 30;
+    // 设置相机位置，使命盘最大化适配页面
+    // 根据容器宽高比调整相机位置，确保命盘适配到页面最大
+    const aspectRatio = this.container.clientWidth / this.container.clientHeight;
+    // 根据视场角和命盘大小计算最佳距离，使命盘尽可能大
+    const fov = this.camera.fov * (Math.PI / 180); // 将视场角转换为弧度
+    const chartRadius = 8; // 命盘半径
+    // 使用三角函数计算最佳距离，考虑倾斜角度，减小距离使画面更近
+    const distance = chartRadius / Math.tan(fov / 2) / Math.cos(Math.PI / 4) * 0.7; // 45度倾斜角，距离缩小30%
+    
+    // 设置相机位置，使命盘正面朝向屏幕外并有一定倾斜角度
+    this.camera.position.set(0, distance * 0.6, distance * 0.6); // 保持45度倾斜角度
+    this.camera.lookAt(0, 0, 0); // 相机看向原点
 
     // 创建渲染器
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -90,6 +101,12 @@ export class EnhancedThreeSceneBase {
       this.controls = new OrbitControls(this.camera, this.renderer.domElement);
       this.controls.enableDamping = true;
       this.controls.dampingFactor = 0.05;
+      
+      // 设置初始视角为倾斜视角
+      this.controls.target.set(0, 0, 0);
+      this.controls.minPolarAngle = Math.PI / 6; // 最小极角（30度），防止视角过于倾斜
+      this.controls.maxPolarAngle = Math.PI / 2.2; // 最大极角，防止相机穿过地面
+      this.controls.update();
     }
 
     // 添加基础光源
@@ -198,8 +215,26 @@ export class EnhancedThreeSceneBase {
     if (!this.camera || !this.renderer) return;
 
     this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+    
+    // 根据容器宽高比调整相机位置，确保命盘适配到页面最大
+    const aspectRatio = this.container.clientWidth / this.container.clientHeight;
+    // 根据视场角和命盘大小计算最佳距离，使命盘尽可能大
+    const fov = this.camera.fov * (Math.PI / 180); // 将视场角转换为弧度
+    const chartRadius = 8; // 命盘半径
+    // 使用三角函数计算最佳距离，考虑倾斜角度，减小距离使画面更近
+    const distance = chartRadius / Math.tan(fov / 2) / Math.cos(Math.PI / 4) * 0.7; // 45度倾斜角，距离缩小30%
+    
+    // 保持45度倾斜角度
+    this.camera.position.set(0, distance * 0.6, distance * 0.6);
+    this.camera.lookAt(0, 0, 0); // 相机看向原点
+    
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    
+    // 更新控制器
+    if (this.controls) {
+      this.controls.update();
+    }
   }
 
   /**

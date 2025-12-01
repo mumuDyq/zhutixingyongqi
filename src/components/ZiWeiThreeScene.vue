@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { EnhancedZiWeiSceneBase } from '../utils/EnhancedZiWeiSceneBase';
+import * as THREE from 'three';
 
 // 接收设备类型参数
 const props = defineProps({
@@ -23,6 +24,31 @@ let ziWeiScene: EnhancedZiWeiSceneBase | null = null;
 
 // 定义窗口大小变化处理函数
 let handleResize: (() => void) | null = null;
+
+// 添加示例星耀
+const addSampleStars = () => {
+  if (!ziWeiScene) return;
+  
+  // 命宫星耀
+  ziWeiScene.addStarToPalace('命宫', '紫微', 0xff0000, new THREE.Vector3(-0.8, 0, 0));
+  ziWeiScene.addStarToPalace('命宫', '天机', 0x00ff00, new THREE.Vector3(0.8, 0, 0));
+  ziWeiScene.addStarToPalace('命宫', '太阳', 0xffff00, new THREE.Vector3(0, 0, -0.8));
+  
+  // 财帛宫星耀
+  ziWeiScene.addStarToPalace('财帛', '武曲', 0x0000ff, new THREE.Vector3(-0.8, 0, 0));
+  ziWeiScene.addStarToPalace('财帛', '贪狼', 0xff00ff, new THREE.Vector3(0.8, 0, 0));
+  ziWeiScene.addStarToPalace('财帛', '天相', 0x00ffff, new THREE.Vector3(0, 0, -0.8));
+  
+  // 官禄宫星耀
+  ziWeiScene.addStarToPalace('官禄', '廉贞', 0xff8800, new THREE.Vector3(-0.8, 0, 0));
+  ziWeiScene.addStarToPalace('官禄', '破军', 0x8800ff, new THREE.Vector3(0.8, 0, 0));
+  ziWeiScene.addStarToPalace('官禄', '七杀', 0xff0088, new THREE.Vector3(0, 0, -0.8));
+  
+  // 夫妻宫星耀
+  ziWeiScene.addStarToPalace('夫妻', '天府', 0x00ff88, new THREE.Vector3(-0.8, 0, 0));
+  ziWeiScene.addStarToPalace('夫妻', '太阴', 0x8888ff, new THREE.Vector3(0.8, 0, 0));
+  ziWeiScene.addStarToPalace('夫妻', '巨门', 0xffff88, new THREE.Vector3(0, 0, -0.8));
+};
 
 // 初始化Three.js场景
 const init = () => {
@@ -80,6 +106,9 @@ const init = () => {
     }
   });
 
+  // 添加示例星耀
+  addSampleStars();
+  
   // 开始动画循环
   ziWeiScene.startZiWeiAnimation();
 };

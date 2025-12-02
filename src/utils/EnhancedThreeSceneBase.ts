@@ -84,10 +84,11 @@ export class EnhancedThreeSceneBase {
     const fov = this.camera.fov * (Math.PI / 180); // 将视场角转换为弧度
     const chartRadius = 8; // 命盘半径
     // 使用三角函数计算最佳距离，考虑倾斜角度，减小距离使画面更近
-    const distance = chartRadius / Math.tan(fov / 2) / Math.cos(Math.PI / 4) * 0.7; // 45度倾斜角，距离缩小30%
+    const distance = chartRadius / Math.tan(fov / 2) / Math.cos(Math.PI / 4) * 0.65; // 45度倾斜角，距离缩小35%
     
     // 设置相机位置，使命盘正面朝向屏幕外并有一定倾斜角度
-    this.camera.position.set(0, distance * 0.6, distance * 0.6); // 保持45度倾斜角度
+    // 调整Y轴和Z轴比例，使命盘倾斜角度更合适
+    this.camera.position.set(0, distance * 0.7, distance * 0.5); // 增加Y轴比例，使视角更倾斜
     this.camera.lookAt(0, 0, 0); // 相机看向原点
 
     // 创建渲染器
@@ -222,10 +223,10 @@ export class EnhancedThreeSceneBase {
     const fov = this.camera.fov * (Math.PI / 180); // 将视场角转换为弧度
     const chartRadius = 8; // 命盘半径
     // 使用三角函数计算最佳距离，考虑倾斜角度，减小距离使画面更近
-    const distance = chartRadius / Math.tan(fov / 2) / Math.cos(Math.PI / 4) * 0.7; // 45度倾斜角，距离缩小30%
+    const distance = chartRadius / Math.tan(fov / 2) / Math.cos(Math.PI / 4) * 0.65; // 45度倾斜角，距离缩小35%
     
-    // 保持45度倾斜角度
-    this.camera.position.set(0, distance * 0.6, distance * 0.6);
+    // 调整Y轴和Z轴比例，使命盘倾斜角度更合适
+    this.camera.position.set(0, distance * 0.7, distance * 0.5); // 增加Y轴比例，使视角更倾斜
     this.camera.lookAt(0, 0, 0); // 相机看向原点
     
     this.camera.updateProjectionMatrix();

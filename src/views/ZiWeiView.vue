@@ -27,13 +27,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
 })
 
-// 紫微斗数相关数据
-// const activeTab = ref('paipan')
 
-// 切换标签页
-// const switchTab = (tab: string) => {
-//   activeTab.value = tab
-// }
 </script>
 
 <template>
@@ -56,19 +50,6 @@ onUnmounted(() => {
   left: 0;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-h1 {
-  margin: 0;
-  color: #333;
-  font-size: 2rem;
-}
-
 .scene-container {
   flex: 1;
   width: 100%;
@@ -81,31 +62,12 @@ h1 {
   padding: 0;
 }
 
-.controls {
-  display: flex;
-  gap: 10px;
-}
-
-.mobile-controls {
-  display: flex;
-  justify-content: center;
-  margin-top: 15px;
-  gap: 15px;
-}
-
 /* 移动端适配 */
 .ziwei.mobile {
   padding: 10px;
 }
 
-.ziwei.mobile .header {
-  flex-direction: column;
-  gap: 10px;
-}
 
-.ziwei.mobile h1 {
-  font-size: 1.5rem;
-}
 
 .ziwei.mobile .scene-container {
   min-height: 60vh;
@@ -114,10 +76,6 @@ h1 {
 /* 平板适配 */
 .ziwei.tablet {
   padding: 15px;
-}
-
-.ziwei.tablet h1 {
-  font-size: 1.8rem;
 }
 
 .ziwei.tablet .scene-container {

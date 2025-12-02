@@ -35,6 +35,38 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
     // 创建紫微斗数盘
     this.createZiWeiChart();
+    
+    // 添加星耀动态缩放功能
+    this.addStarScalingCallback();
+  }
+  
+  /**
+   * 添加星耀动态缩放功能
+   */
+  private addStarScalingCallback(): void {
+    // 添加动画回调，用于动态调整星耀大小
+    this.addAnimationCallback(() => {
+      if (!this.camera || !this.ziWeiChart) return;
+      
+      // 遍历所有星耀组
+      this.ziWeiChart.traverse((child) => {
+        if (child instanceof THREE.Group && child.name.startsWith('star_')) {
+          // 计算星耀与相机的距离
+          const distance = this.camera!.position.distanceTo(child.position);
+          
+          // 根据距离动态调整缩放比例，距离越远缩放越大
+          // 使用对数函数使缩放更加平滑
+          const scale = 1 + Math.log(Math.max(distance / 5, 1)) * 0.5;
+          
+          // 限制最大缩放比例，防止星耀过大
+          const maxScale = 2.5;
+          const finalScale = Math.min(scale, maxScale);
+          
+          // 应用缩放
+          child.scale.set(finalScale, finalScale, finalScale);
+        }
+      });
+    });
   }
 
   /**
@@ -274,12 +306,12 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     // 紫微斗数十二宫位名称（使用更完整的名称）
     const palaceNames = [
       '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-      '迁移', '奴仆', '官禄', '田宅', '福德', '父母'
+      '迁移', '交友', '官禄', '田宅', '福德', '父母'
     ];
 
     const palaceNames2 = [
       '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-      '迁移', '奴仆', '官禄', '田宅', '福德', '父母'
+      '迁移', '交友', '官禄', '田宅', '福德', '父母'
     ];
 
     // 传统紫微斗数命盘布局 - 参考文墨天机软件的宫位排列顺序
@@ -292,7 +324,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
       // 右侧三宫（从上到下）
       { x: 6, z: 6, name: '官禄' },
-      { x: 6, z: 2, name: '奴仆' },
+      { x: 6, z: 2, name: '交友' },
       { x: 6, z: -2, name: '迁移' },
 
       // 下方三宫（从右到左）
@@ -328,7 +360,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       // 创建更大的矩形宫位底座
       const palaceWidth = 3.8; // 增大宫位宽度
       const palaceDepth = 3.8; // 增大宫位深度
-      const palaceHeight = 0.15; // 宫位高度
+      const palaceHeight = 0.05; // 减小宫位高度，使其刚好能清晰显示宫位名称
 
       // 创建平面的圆角矩形底座
       const roundedRectShape = new THREE.Shape();
@@ -364,7 +396,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
           break;
         case '兄弟':
         case '疾厄':
-        case '奴仆':
+        case '交友':
           palaceColor = new THREE.Color(0x006400); // 暗绿色
           break;
         case '田宅':
@@ -467,17 +499,18 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
         transparent: true
       });
       const labelSprite = new THREE.Sprite(labelSpriteMaterial);
-      labelSprite.scale.set(4, 2, 1); // 增大标签尺寸
+      labelSprite.scale.set(3, 1.5, 1); // 调整标签尺寸，确保远处的宫位名称也能清晰可见
 
       // 设置标签位置 - 向上移动，确保完整显示
-      labelSprite.position.set(x, 0.3, z); // 进一步提高标签位置
+      labelSprite.position.set(x, 0.25, z); // 调整标签位置
       labelSprite.name = `label_${palaceName}`;
 
       this.ziWeiChart.add(labelSprite);
 
       // 创建星耀容器（用于放置星耀）
       const starsContainer = new THREE.Group();
-      starsContainer.position.set(x, 0.03, z); // 进一步降低高度，使其更贴近宫位
+      // 将星耀容器放在宫位上方更高位置
+      starsContainer.position.set(x, palaceHeight + 1.5, z); // 提高星耀位置
       starsContainer.name = `stars_${palaceNames[i]}`;
       this.ziWeiChart.add(starsContainer);
     }
@@ -507,15 +540,15 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
       { from: { x: -6, z: 2 }, to: { x: -2, z: 2 } }, // 迁移 -> 疾厄
 
-      { from: { x: 6, z: -2 }, to: { x: -2, z: -2 } }, // 奴仆 -> 官禄
+      { from: { x: 6, z: -2 }, to: { x: -2, z: -2 } }, // 交友 -> 官禄
       { from: { x: -2, z: -2 }, to: { x: -6, z: -2 } }, // 官禄 -> 田宅
 
       { from: { x: 6, z: -6 }, to: { x: 2, z: -6 } }, // 福德 -> 父母
 
       // 纵向连接
       { from: { x: 6, z: 6 }, to: { x: 6, z: 2 } }, // 命宫 -> 财帛
-      { from: { x: 6, z: 2 }, to: { x: 6, z: -2 } }, // 财帛 -> 奴仆
-      { from: { x: 6, z: -2 }, to: { x: 6, z: -6 } }, // 奴仆 -> 福德
+      { from: { x: 6, z: 2 }, to: { x: 6, z: -2 } }, // 财帛 -> 交友
+      { from: { x: 6, z: -2 }, to: { x: 6, z: -6 } }, // 交友 -> 福德
 
       { from: { x: 2, z: 6 }, to: { x: 2, z: 2 } }, // 兄弟 -> 疾厄
       { from: { x: 2, z: -6 }, to: { x: 2, z: 6 } }, // 父母 -> 兄弟
@@ -531,7 +564,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       { from: { x: 2, z: 6 }, to: { x: -6, z: 2 } }, // 兄弟 -> 迁移
       { from: { x: -2, z: 6 }, to: { x: -6, z: -2 } }, // 夫妻 -> 田宅
       { from: { x: 6, z: 2 }, to: { x: -2, z: -2 } }, // 财帛 -> 官禄
-      { from: { x: 6, z: -2 }, to: { x: 2, z: -6 } }, // 奴仆 -> 父母
+      { from: { x: 6, z: -2 }, to: { x: 2, z: -6 } }, // 交友 -> 父母
       { from: { x: -2, z: -2 }, to: { x: 2, z: -6 } } // 官禄 -> 父母
     ];
 
@@ -701,44 +734,94 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       console.error(`找不到宫位 ${palaceName} 的星耀容器`);
       return;
     }
+    
+    // 获取当前宫位已有的星耀数量，用于有序排列
+    const existingStars = starsContainer.children.filter(child => child.name.startsWith('star_'));
+    const starIndex = existingStars.length;
 
-    // 创建星耀球体
-    const starGeometry = new THREE.SphereGeometry(0.4, 16, 16);
-    const starMaterial = new THREE.MeshStandardMaterial({
-      color: starColor,
-      emissive: starColor,
-      emissiveIntensity: 0.4,
-      metalness: 0.6,
-      roughness: 0.3
-    });
-    const star = new THREE.Mesh(starGeometry, starMaterial);
+    // 根据星耀索引计算从上到下依次排列的位置
+    const spacing = 0.6; // 增加星耀之间的垂直间距，使排列更明显
+    
+    // 计算相对于宫位中心的偏移
+    const offsetX = 0; // 水平居中
+    const offsetZ = (starIndex - 2.5) * spacing; // 从上到下排列，中心为0
+    
+    // 设置位置
+    position.x = offsetX;
+    position.z = offsetZ;
+    
 
-    // 设置星耀位置
-    star.position.copy(position);
+    
 
-    // 创建星耀名称标签
+    
+
+
+    // 将星耀名称直接写在星耀球体上
     const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 64;
+    canvas.width = 256;
+    canvas.height = 256;
     const context = canvas.getContext('2d')!;
-    context.fillStyle = 'rgba(0, 0, 0, 0)';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.font = 'bold 24px Arial';
+    
+    // 不绘制背景，只保留文字
+    
+    // 绘制星耀名称 - 增大字体尺寸
+    context.font = 'bold 80px "KaiTi", "楷体", serif'; // 增大字体到80px
     context.fillStyle = '#ffffff';
+    context.strokeStyle = '#000000'; // 添加黑色描边
+    context.lineWidth = 4; // 增加描边宽度
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.fillText(starName, canvas.width / 2, canvas.height / 2);
-
+    context.shadowColor = 'rgba(0, 0, 0, 1)'; // 增强阴影
+    context.shadowBlur = 8; // 增加阴影模糊度
+    
+    // 先描边再填充，确保文字清晰可见
+    context.strokeText(starName, 128, 128);
+    context.fillText(starName, 128, 128);
+    
+    // 创建带有文字的纹理
     const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(spriteMaterial);
-    sprite.scale.set(1.2, 0.6, 1);
-    sprite.position.set(0, 0.6, 0);
+    texture.needsUpdate = true;
+    
+    // 创建星耀精灵 - 使用精灵代替球体，使文字始终面向屏幕
+    
+    // 使用带有文字的纹理创建星耀材质 - 只显示文字部分
+    const starMaterial = new THREE.SpriteMaterial({
+      map: texture,
+      color: 0xffffff, // 使用白色作为基础颜色，确保文字颜色正确显示
+      transparent: true,
+      alphaTest: 0.01 // 降低透明度测试阈值，使文字边缘更加平滑
+    });
+    const star = new THREE.Sprite(starMaterial);
+    
+    // 设置精灵大小 - 增大以适应更大的文字
+    star.scale.set(1.2, 1.2, 1); // 增大精灵的宽度和高度
+    
+    // 创建一个小球代表星耀
+    const starSphereGeometry = new THREE.SphereGeometry(0.15, 16, 16);
+    const starSphereMaterial = new THREE.MeshStandardMaterial({
+      color: starColor, // 使用星耀的颜色
+      emissive: starColor, // 添加发光效果
+      emissiveIntensity: 0.6,
+      metalness: 0.7,
+      roughness: 0.3
+    });
+    const starSphere = new THREE.Mesh(starSphereGeometry, starSphereMaterial);
+    
+    // 限制星耀位置在宫位范围内
+    const boundedPosition = position.clone();
+    // 限制X和Z坐标在宫位范围内
+    boundedPosition.x = Math.max(-1.5, Math.min(1.5, boundedPosition.x));
+    boundedPosition.z = Math.max(-1.5, Math.min(1.5, boundedPosition.z));
+    // 设置Y坐标为0，因为容器已经在正确的高度
+    boundedPosition.y = 0;
+    star.position.copy(boundedPosition);
+    starSphere.position.copy(boundedPosition);
+    starSphere.position.y -= 0.4; // 保持小球在文字下方
 
     // 创建星耀组
     const starGroup = new THREE.Group();
     starGroup.add(star);
-    starGroup.add(sprite);
+    starGroup.add(starSphere); // 将小球添加到星耀组中
     starGroup.name = `star_${starName}`;
 
     // 添加到容器
@@ -796,6 +879,19 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     this.addAnimationCallback(() => {
       if (this.stars) {
         this.stars.rotation.y += 0.0005;
+      }
+      
+      // 确保所有星耀始终面向屏幕
+      if (this.ziWeiChart) {
+        this.ziWeiChart.traverse((child) => {
+          if (child instanceof THREE.Group && child.name.startsWith('stars_')) {
+            child.traverse((star) => {
+              if (star instanceof THREE.Sprite) {
+                // 精灵会自动面向摄像机，不需要额外处理
+              }
+            });
+          }
+        });
       }
     });
 

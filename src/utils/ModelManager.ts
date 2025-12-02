@@ -1,9 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-/**
- * 模型管理器接口，定义了模型管理的基本方法
- */
+// 直接定义接口，避免导入问题
 interface IModelManager {
   loadModel(url: string): Promise<THREE.Object3D>;
   addModelToScene(model: THREE.Object3D, position?: THREE.Vector3, rotation?: THREE.Euler): void;

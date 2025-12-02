@@ -6,5 +6,16 @@ export default defineConfig({
   plugins: [vue()],
   optimizeDeps: {
     include: ['three']
+  },
+  define: {
+    'process.env': {}
+  },
+  resolve: {
+    alias: [
+      {
+        find: /^@\//,
+        replacement: '/src/'
+      }
+    ]
   }
 })

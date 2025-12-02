@@ -1,30 +1,82 @@
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+
+// 检测设备类型
+const isMobile = ref(false)
+const isTablet = ref(false)
+
+// 响应式布局检测
+const checkDeviceType = () => {
+  const width = window.innerWidth
+  const wasMobile = isMobile.value
+  const wasTablet = isTablet.value
+  
+  isMobile.value = width <= 768
+  isTablet.value = width > 768 && width <= 1024
+  
+  // 如果设备类型发生变化，触发全局事件
+  if (wasMobile !== isMobile.value || wasTablet !== isTablet.value) {
+    window.dispatchEvent(new CustomEvent('deviceTypeChanged', {
+      detail: { isMobile: isMobile.value, isTablet: isTablet.value }
+    }))
+  }
+}
+
+// 监听窗口大小变化
+const handleResize = () => {
+  checkDeviceType()
+}
+
+onMounted(() => {
+  checkDeviceType()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
 </script>
 
 <template>
-  <div>
-    <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo" alt="Vite logo" />
-    </a>
-    <a href="https://vuejs.org/" target="_blank">
-      <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-    </a>
+  <div class="app-container" :class="{ 'mobile': isMobile, 'tablet': isTablet }">
+    <main class="app-main">
+      <router-view></router-view>
+    </main>
   </div>
-  <HelloWorld msg="Vite + Vue" />
 </template>
 
-<style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+<style>
+/* 不使用scoped，确保样式全局生效 */
+.app-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  margin: 0;
+  position: relative;
 }
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
+
+/* 移动端适配 */
+.app-container.mobile .app-main {
+  padding: 5px;
+}
+
+/* 平板适配 */
+.app-container.tablet .app-main {
+  padding: 10px;
 }
 </style>

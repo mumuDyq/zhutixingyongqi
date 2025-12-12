@@ -18,6 +18,12 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   protected ziWeiChart: THREE.Group | null = null;
   protected palaces: Map<string, THREE.Object3D> = new Map();
   protected taiji: THREE.Group | null = null;
+  
+  // 宫位名称数组
+  protected palaceNames: string[] = [
+    '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
+    '迁移', '交友', '官禄', '田宅', '福德', '父母'
+  ];
 
   constructor(container: HTMLElement) {
     super(container);
@@ -303,16 +309,8 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   protected createPalaces(): void {
     if (!this.ziWeiChart) return;
 
-    // 紫微斗数十二宫位名称（使用更完整的名称）
-    const palaceNames = [
-      '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-      '迁移', '交友', '官禄', '田宅', '福德', '父母'
-    ];
-
-    const palaceNames2 = [
-      '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-      '迁移', '交友', '官禄', '田宅', '福德', '父母'
-    ];
+    // 使用类中定义的宫位名称数组
+    // const palaceNames = this.palaceNames; // 已经在类中定义
 
     // 传统紫微斗数命盘布局 - 参考文墨天机软件的宫位排列顺序
     // 命盘呈方形，十二宫位按照传统命盘排列
@@ -383,7 +381,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
       // 根据宫位创建不同颜色，使用传统紫微斗数配色
       let palaceColor;
-      switch (palaceNames[i]) {
+      switch (this.palaceNames[i]) {
         case '命宫':
         case '财帛':
         case '官禄':
@@ -511,7 +509,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       const starsContainer = new THREE.Group();
       // 将星耀容器放在宫位上方更高位置
       starsContainer.position.set(x, palaceHeight + 1.5, z); // 提高星耀位置
-      starsContainer.name = `stars_${palaceNames[i]}`;
+      starsContainer.name = `stars_${this.palaceNames[i]}`;
       this.ziWeiChart.add(starsContainer);
     }
   }
@@ -711,6 +709,26 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   }
 
   /**
+   * 设置星耀名称的可见性
+   * @param visible 是否可见
+   */
+  public setStarNamesVisibility(visible: boolean): void {
+    if (!this.ziWeiChart) return;
+    
+    // 遍历所有星耀名称精灵
+    this.ziWeiChart.traverse((child) => {
+      if (child instanceof THREE.Sprite && child.userData.isStarName) {
+        child.visible = visible;
+      }
+      
+      // 同时控制连接线的可见性
+      if (child instanceof THREE.Line && child.userData.isStarNameLine) {
+        child.visible = visible;
+      }
+    });
+  }
+  
+  /**
    * 在指定宫位添加星耀
    * @param palaceName 宫位名称
    * @param starName 星耀名称
@@ -740,11 +758,15 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     const starIndex = existingStars.length;
 
     // 根据星耀索引计算从上到下依次排列的位置
-    const spacing = 0.6; // 增加星耀之间的垂直间距，使排列更明显
+    const spacing = 0.6; // 增大星耀之间的间距
+    
+    // 采用网格布局：每行最多3个星耀
+    const row = Math.floor(starIndex / 3);
+    const col = starIndex % 3;
     
     // 计算相对于宫位中心的偏移
-    const offsetX = 0; // 水平居中
-    const offsetZ = (starIndex - 2.5) * spacing; // 从上到下排列，中心为0
+    const offsetX = (col - 1) * spacing; // 水平居中，左右分布
+    const offsetZ = (1.5 - row) * spacing; // 从上到下排列，中心为0
     
     // 设置位置
     position.x = offsetX;
@@ -756,54 +778,70 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     
 
 
-    // 将星耀名称直接写在星耀球体上
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const context = canvas.getContext('2d')!;
+    // 创建星耀名称精灵
+    const nameCanvas = document.createElement('canvas');
+    nameCanvas.width = 256;
+    nameCanvas.height = 256;
+    const nameContext = nameCanvas.getContext('2d')!;
     
     // 不绘制背景，只保留文字
     
     // 绘制星耀名称 - 增大字体尺寸
-    context.font = 'bold 80px "KaiTi", "楷体", serif'; // 增大字体到80px
-    context.fillStyle = '#ffffff';
-    context.strokeStyle = '#000000'; // 添加黑色描边
-    context.lineWidth = 4; // 增加描边宽度
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.shadowColor = 'rgba(0, 0, 0, 1)'; // 增强阴影
-    context.shadowBlur = 8; // 增加阴影模糊度
+    nameContext.font = 'bold 80px "KaiTi", "楷体", serif';
+    nameContext.fillStyle = '#ffffff';
+    nameContext.strokeStyle = '#000000';
+    nameContext.lineWidth = 4;
+    nameContext.textAlign = 'center';
+    nameContext.textBaseline = 'middle';
+    nameContext.shadowColor = 'rgba(0, 0, 0, 1)';
+    nameContext.shadowBlur = 8;
     
     // 先描边再填充，确保文字清晰可见
-    context.strokeText(starName, 128, 128);
-    context.fillText(starName, 128, 128);
+    nameContext.strokeText(starName, 128, 128);
+    nameContext.fillText(starName, 128, 128);
     
     // 创建带有文字的纹理
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
+    const nameTexture = new THREE.CanvasTexture(nameCanvas);
+    nameTexture.needsUpdate = true;
     
     // 创建星耀精灵 - 使用精灵代替球体，使文字始终面向屏幕
     
-    // 使用带有文字的纹理创建星耀材质 - 只显示文字部分
-    const starMaterial = new THREE.SpriteMaterial({
-      map: texture,
-      color: 0xffffff, // 使用白色作为基础颜色，确保文字颜色正确显示
-      transparent: true,
-      alphaTest: 0.01 // 降低透明度测试阈值，使文字边缘更加平滑
-    });
-    const star = new THREE.Sprite(starMaterial);
-    
-    // 设置精灵大小 - 增大以适应更大的文字
-    star.scale.set(1.2, 1.2, 1); // 增大精灵的宽度和高度
-    
-    // 创建一个小球代表星耀
-    const starSphereGeometry = new THREE.SphereGeometry(0.15, 16, 16);
-    const starSphereMaterial = new THREE.MeshStandardMaterial({
-      color: starColor, // 使用星耀的颜色
-      emissive: starColor, // 添加发光效果
+    // 创建星耀球体 - 减小尺寸
+    const starGeometry = new THREE.SphereGeometry(0.15, 32, 16);
+    const starMaterial = new THREE.MeshStandardMaterial({
+      color: starColor,
+      emissive: starColor,
       emissiveIntensity: 0.6,
       metalness: 0.7,
       roughness: 0.3
+    });
+    const star = new THREE.Mesh(starGeometry, starMaterial);
+    
+    // 创建星耀名称精灵
+    const nameSpriteMaterial = new THREE.SpriteMaterial({
+      map: nameTexture,
+      color: 0xffffff,
+      transparent: true,
+      alphaTest: 0.01
+    });
+    const nameSprite = new THREE.Sprite(nameSpriteMaterial);
+    
+    // 标记为星耀名称，便于控制可见性
+    nameSprite.userData.isStarName = true;
+    
+    // 设置名称精灵大小 - 增大名称大小以提高可读性
+    nameSprite.scale.set(0.8, 0.8, 1); // 增大名称大小
+    
+    // 创建一个小球代表星耀
+    const starSphereGeometry = new THREE.SphereGeometry(0.005, 16, 16); // 极小球体半径
+    const starSphereMaterial = new THREE.MeshStandardMaterial({
+      color: starColor, // 使用星耀的颜色
+      emissive: starColor, // 添加发光效果
+      emissiveIntensity: 0.2, // 大幅降低发光强度
+      metalness: 0.3, // 降低金属感
+      roughness: 0.7, // 增加粗糙度
+      transparent: true, // 添加透明度
+      opacity: 0.5 // 降低不透明度
     });
     const starSphere = new THREE.Mesh(starSphereGeometry, starSphereMaterial);
     
@@ -815,13 +853,53 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     // 设置Y坐标为0，因为容器已经在正确的高度
     boundedPosition.y = 0;
     star.position.copy(boundedPosition);
-    starSphere.position.copy(boundedPosition);
-    starSphere.position.y -= 0.4; // 保持小球在文字下方
+    
+    // 将星耀名称放在星耀上方
+    // 计算名称位置，直接在星耀上方
+    const nameX = boundedPosition.x;
+    const nameZ = boundedPosition.z;
+    const nameY = boundedPosition.y + 0.5; // 在星耀上方0.5单位，适应更小的星耀
+    
+
+    nameSprite.position.set(nameX, nameY, nameZ);
+    
+    // 创建连接线（从星耀到名称）
+    const points = [];
+    // 从星耀顶部开始
+    const startX = boundedPosition.x;
+    const startZ = boundedPosition.z;
+    const startY = boundedPosition.y + 0.005; // 星耀顶部，适应极小的星耀
+    points.push(new THREE.Vector3(startX, startY, startZ));
+    
+    // 添加中间点，创建曲线效果
+    const midX = (startX + nameX) / 2;
+    const midZ = (startZ + nameZ) / 2;
+    const midY = 0.5; // 中间点略微抬高，创建弧形效果
+    points.push(new THREE.Vector3(midX, midY, midZ));
+    
+    points.push(new THREE.Vector3(nameX, nameY, nameZ));
+    
+    // 使用CatmullRomCurve3创建平滑曲线
+    const curve = new THREE.CatmullRomCurve3(points);
+    const curvePoints = curve.getPoints(50); // 获取曲线上的点
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+    const lineMaterial = new THREE.LineBasicMaterial({
+      color: starColor,
+      transparent: true,
+      opacity: 0.4
+    });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+    
+    // 标记为星耀名称连接线，便于控制可见性
+    line.userData.isStarNameLine = true;
+    
+    starSphere.position.y -= 0.5; // 调整小球位置，适应更小的球体和更大的名称
 
     // 创建星耀组
     const starGroup = new THREE.Group();
     starGroup.add(star);
-    starGroup.add(starSphere); // 将小球添加到星耀组中
+    starGroup.add(nameSprite);
+    starGroup.add(line); // 添加连接线
     starGroup.name = `star_${starName}`;
 
     // 添加到容器

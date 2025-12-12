@@ -19,10 +19,12 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   protected palaces: Map<string, THREE.Object3D> = new Map();
   protected taiji: THREE.Group | null = null;
 
-  // 宫位名称数组
+  // 宫位名称数组 - 按照实际命盘布局顺序排列
   protected palaceNames: string[] = [
-    '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-    '迁移', '交友', '官禄', '田宅', '福德', '父母'
+    '父母', '福德', '田宅',
+    '官禄', '交友', '迁移',
+    '疾厄', '财帛', '子女',
+    '夫妻', '兄弟', '命宫'
   ];
 
   constructor(container: HTMLElement) {
@@ -1055,45 +1057,29 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       return;
     }
 
-    // 宫位索引映射 - 按照顺时针顺序排列
-    const palaceIndexMap: { [key: string]: number } = {
-      '命宫': 0,
-      '兄弟': 1,
-      '夫妻': 2,
-      '子女': 3,
-      '财帛': 4,
-      '疾厄': 5,
-      '迁移': 6,
-      '交友': 7,
-      '官禄': 8,
-      '田宅': 9,
-      '福德': 10,
-      '父母': 11
-    };
-
-    // 获取宫位索引
-    const palaceIndex = palaceIndexMap[palaceName];
-    if (palaceIndex === undefined) {
-      console.error(`无效的宫位名称: ${palaceName}`);
-      return;
-    }
-
     // 清除之前的三方四正连接线
     this.clearThreeSidesAndFourDirections();
 
     // 计算三方四正的宫位索引
+    // 在palaceNames数组中查找当前宫位的索引
+    const palaceIndex = this.palaceNames.indexOf(palaceName);
+    if (palaceIndex === -1) {
+      console.error(`找不到宫位: ${palaceName}`);
+      return;
+    }
+    
     // 对宫（相隔6个宫位，即180度对角）
     const oppositeIndex = (palaceIndex + 6) % 12;
+    const oppositePalace = this.palaceNames[oppositeIndex]!;
 
     // 三合宫（相隔4个宫位，形成120度角）
     // 三方是指命宫、财帛宫、官禄宫形成的一个三角关系
     const firstTriadIndex = (palaceIndex + 4) % 12;
     const secondTriadIndex = (palaceIndex + 8) % 12;
-
-    // 获取宫位名称
-    const oppositePalace = this.palaceNames[oppositeIndex]!;
     const firstTriadPalace = this.palaceNames[firstTriadIndex]!;
     const secondTriadPalace = this.palaceNames[secondTriadIndex]!;
+
+    // 宫位名称已在上面获取
 
     // 创建不同类型的连接线材质
     // 对宫连接线材质 - 绿色
@@ -1126,18 +1112,14 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     if (highlight) {
       // 清除所有之前的高亮由clearThreeSidesAndFourDirections方法处理
       
-      // 高亮当前选中的宫位 - 金色，作为本宫标识
-      this.highlightPalace(palaceName, 0xFFD700, 0.5, 'main');
+      // 高亮当前选中的宫位 - 金色，作为本宫标识，增加亮度使其更显眼
+      this.highlightPalace(palaceName, 0xFFD700, 0.7, 'main');
 
-      // 高亮对宫 - 绿色，作为对宫标识
-      this.highlightPalace(oppositePalace, 0x00FF00, 0.6, 'opposite');
+      // 不再高亮对宫，避免颜色混乱
 
-      // 高亮三合宫 - 蓝色，作为三合宫标识
-      this.highlightPalace(firstTriadPalace, 0x0099FF, 0.4, 'triad');
-      this.highlightPalace(secondTriadPalace, 0x0099FF, 0.4, 'triad');
+      // 不再高亮三合宫，避免颜色混乱
       
-      // 在命盘上添加颜色标记
-      this.addPalaceColorMarkers(palaceName, oppositePalace, firstTriadPalace, secondTriadPalace);
+      // 不再添加颜色标记，避免视觉混乱
     }
   }
 
@@ -1266,8 +1248,16 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     // 遍历宫位对象，找到宫位底座
     palaceObj.traverse((child) => {
       if (child instanceof THREE.Mesh && child.geometry instanceof THREE.ShapeGeometry) {
+        // 获取当前材质
+        const currentMaterial = child.material as THREE.MeshStandardMaterial;
+        
+        // 只有当没有保存原始材质时才保存
+        if (!child.userData.originalMaterial) {
+          child.userData.originalMaterial = currentMaterial;
+        }
+        
         // 创建高亮材质
-        const originalMaterial = child.material as THREE.MeshStandardMaterial;
+        const originalMaterial = child.userData.originalMaterial as THREE.MeshStandardMaterial;
         const highlightMaterial = new THREE.MeshStandardMaterial({
           color: new THREE.Color(color),
           emissive: new THREE.Color(color),
@@ -1277,9 +1267,13 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
           transparent: true,
           opacity: 0.8
         });
-
-        // 保存原始材质
-        child.userData.originalMaterial = originalMaterial;
+        
+        // 释放当前高亮材质资源（如果当前材质不是原始材质）
+        if (currentMaterial !== originalMaterial) {
+          if (currentMaterial.map) currentMaterial.map.dispose();
+          currentMaterial.dispose();
+        }
+        
         // 应用高亮材质
         child.material = highlightMaterial;
       }
@@ -1331,10 +1325,24 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     // 恢复所有宫位的原始材质
     this.palaces.forEach(palaceObj => {
       palaceObj.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.userData.originalMaterial) {
-          // 恢复原始材质
-          child.material = child.userData.originalMaterial;
-          delete child.userData.originalMaterial;
+        if (child instanceof THREE.Mesh) {
+          // 递归查找最原始的材质，确保正确恢复
+          let currentMaterial = child.material as THREE.MeshStandardMaterial;
+          let originalMaterial = child.userData.originalMaterial;
+          
+          // 如果有原始材质，则恢复它
+          if (originalMaterial) {
+            // 释放当前高亮材质资源
+            if (currentMaterial && currentMaterial !== originalMaterial) {
+              if (currentMaterial.map) currentMaterial.map.dispose();
+              currentMaterial.dispose();
+            }
+            
+            // 恢复原始材质
+            child.material = originalMaterial;
+            // 清除userData中的originalMaterial引用
+            delete child.userData.originalMaterial;
+          }
         }
       });
     });

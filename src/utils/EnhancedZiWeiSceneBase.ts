@@ -1,5 +1,25 @@
 import { EnhancedThreeSceneBase } from './EnhancedThreeSceneBase';
 import * as THREE from 'three';
+import { ziWeiDataManager } from './ZiWeiData';
+
+// 定义必要的类型
+interface PalaceData {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  color?: number;
+  description?: string;
+}
+
+interface StarData {
+  id: string;
+  name: string;
+  color?: number;
+  type: string;
+  description?: string;
+  element?: string;
+}
 
 // 定义宫位位置类型
 interface PalacePosition {
@@ -22,13 +42,10 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   // 三方四正动画标志
   private threeSidesAnimationAdded: boolean = false;
 
-  // 宫位名称数组 - 按照实际命盘布局顺序排列
-  protected palaceNames: string[] = [
-    '父母', '福德', '田宅',
-    '官禄', '交友', '迁移',
-    '疾厄', '财帛', '子女',
-    '夫妻', '兄弟', '命宫'
-  ];
+  // 使用 ZiWeiDataManager 获取宫位数据
+  protected get palaceNames(): string[] {
+    return ziWeiDataManager.getPalaceManager().getPalaceNames();
+  }
 
   constructor(container: HTMLElement) {
     super(container);
@@ -385,32 +402,16 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   protected createPalaces(): void {
     if (!this.ziWeiChart) return;
 
-    // 使用类中定义的宫位名称数组
-    // const palaceNames = this.palaceNames; // 已经在类中定义
+    // 使用 ZiWeiDataManager 获取宫位数据
+    const palaceData = ziWeiDataManager.getPalaceManager().getAllPalaces();
 
     // 传统紫微斗数命盘布局 - 参考文墨天机软件的宫位排列顺序
     // 命盘呈方形，十二宫位按照传统命盘排列
-    const gridPositions: PalacePosition[] = [
-      // 上方三宫（从左到右）
-      { x: -6, z: 6, name: '父母' },
-      { x: -2, z: 6, name: '福德' },
-      { x: 2, z: 6, name: '田宅' },
-
-      // 右侧三宫（从上到下）
-      { x: 6, z: 6, name: '官禄' },
-      { x: 6, z: 2, name: '交友' },
-      { x: 6, z: -2, name: '迁移' },
-
-      // 下方三宫（从右到左）
-      { x: 6, z: -6, name: '疾厄' },
-      { x: 2, z: -6, name: '财帛' },
-      { x: -2, z: -6, name: '子女' },
-
-      // 左侧三宫（从下到上）
-      { x: -6, z: -6, name: '夫妻' },
-      { x: -6, z: -2, name: '兄弟' },
-      { x: -6, z: 2, name: '命宫' }
-    ];
+    const gridPositions: PalacePosition[] = palaceData.map(palace => ({
+      x: palace.x,
+      z: palace.z,
+      name: palace.name
+    }));
 
     // 创建连接线，表示宫位之间的关系
     this.createPalaceConnections();
@@ -462,31 +463,12 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
         bevelSegments: 3
       });
 
-      // 根据宫位创建不同颜色，使用传统紫微斗数配色
-      let palaceColor;
-      switch (this.palaceNames[i]) {
-        case '命宫':
-        case '财帛':
-        case '官禄':
-          palaceColor = new THREE.Color(0x8B0000); // 暗红色
-          break;
-        case '夫妻':
-        case '子女':
-        case '迁移':
-          palaceColor = new THREE.Color(0x00008B); // 暗蓝色
-          break;
-        case '兄弟':
-        case '疾厄':
-        case '交友':
-          palaceColor = new THREE.Color(0x006400); // 暗绿色
-          break;
-        case '田宅':
-        case '福德':
-        case '父母':
-        default:
-          palaceColor = new THREE.Color(0x4B0082); // 暗紫色
-          break;
-      }
+      // 从 ZiWeiDataManager 获取宫位数据
+      const palaceData = ziWeiDataManager.getPalaceByName(position.name);
+      // 使用宫位数据中的颜色，如果没有则使用默认颜色
+      const palaceColor = palaceData?.color ? 
+        new THREE.Color(palaceData.color) : 
+        new THREE.Color(0x4B0082); // 默认暗紫色
 
       const palaceMaterial = new THREE.MeshStandardMaterial({
         color: palaceColor,
@@ -829,13 +811,13 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
    * 在指定宫位添加星耀
    * @param palaceName 宫位名称
    * @param starName 星耀名称
-   * @param starColor 星耀颜色
+   * @param starColor 星耀颜色（可选，如果不提供则使用 ZiWeiDataManager 中的默认颜色）
    * @param position 星耀在宫位内的相对位置
    */
   public addStarToPalace(
     palaceName: string,
     starName: string,
-    starColor: number = 0xffffff,
+    starColor?: number,
     position: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
   ): void {
     if (!this.ziWeiChart) {
@@ -903,11 +885,15 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
     // 创建星耀精灵 - 使用精灵代替球体，使文字始终面向屏幕
 
+    // 从 ZiWeiDataManager 获取星耀数据，如果没有提供颜色则使用默认颜色
+    const starData = ziWeiDataManager.getStarByName(starName);
+    const finalStarColor = starColor ?? starData?.color ?? 0xffffff;
+    
     // 创建星耀球体 - 减小尺寸
     const starGeometry = new THREE.SphereGeometry(0.15, 32, 16);
     const starMaterial = new THREE.MeshStandardMaterial({
-      color: starColor,
-      emissive: starColor,
+      color: finalStarColor,
+      emissive: finalStarColor,
       emissiveIntensity: 0.6,
       metalness: 0.7,
       roughness: 0.3
@@ -932,8 +918,8 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     // 创建一个小球代表星耀
     const starSphereGeometry = new THREE.SphereGeometry(0.005, 16, 16); // 极小球体半径
     const starSphereMaterial = new THREE.MeshStandardMaterial({
-      color: starColor, // 使用星耀的颜色
-      emissive: starColor, // 添加发光效果
+      color: finalStarColor, // 使用星耀的颜色
+      emissive: finalStarColor, // 添加发光效果
       emissiveIntensity: 0.2, // 大幅降低发光强度
       metalness: 0.3, // 降低金属感
       roughness: 0.7, // 增加粗糙度
@@ -981,7 +967,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     const curvePoints = curve.getPoints(50); // 获取曲线上的点
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: starColor,
+      color: finalStarColor,
       transparent: true,
       opacity: 0.4
     });

@@ -32,6 +32,65 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
   constructor(container: HTMLElement) {
     super(container);
+    // 添加键盘事件监听
+    this.setupKeyboardEvents();
+  }
+
+  /**
+   * 设置键盘事件监听
+   */
+  private setupKeyboardEvents(): void {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // 按下空格键时执行适配屏幕功能
+      if (event.code === 'Space') {
+        event.preventDefault();
+        this.fitToScreen();
+      }
+    };
+
+    // 添加键盘事件监听
+    window.addEventListener('keydown', handleKeyDown);
+
+    // 添加清理回调，在对象销毁时移除事件监听
+    this.addCleanupCallback(() => {
+      window.removeEventListener('keydown', handleKeyDown);
+    });
+  }
+
+  /**
+   * 缩放命盘至适配屏幕，保持当前视角只调整大小，同时将命盘中心回到坐标原点
+   */
+  public fitToScreen(): void {
+    if (!this.camera || !this.controls) return;
+
+    // 保存当前相机位置
+    const currentPosition = this.camera.position.clone();
+    
+    // 计算相机到当前目标点的方向向量
+    const currentTarget = this.controls.target.clone();
+    const direction = new THREE.Vector3().subVectors(currentPosition, currentTarget).normalize();
+    
+    // 根据视场角和命盘大小计算最佳距离，使命盘适配屏幕
+    const fov = this.camera.fov * (Math.PI / 180); // 将视场角转换为弧度
+    const chartRadius = 8; // 命盘半径
+    
+    // 计算使整个命盘适配屏幕所需的距离
+    // 考虑当前视角方向，使用视场角计算
+    const optimalDistance = chartRadius / Math.tan(fov / 2) * 0.9; // 0.9是留出一些边距
+    
+    // 计算新的相机位置，保持原有方向但调整距离，目标点设为原点
+    const origin = new THREE.Vector3(0, 0, 0);
+    const newPosition = new THREE.Vector3().addVectors(
+      origin, 
+      direction.multiplyScalar(optimalDistance)
+    );
+    
+    // 设置新的相机位置和目标点
+    this.camera.position.copy(newPosition);
+    this.controls.target.copy(origin);
+    
+    // 更新控制器
+    this.controls.update();
   }
 
   /**

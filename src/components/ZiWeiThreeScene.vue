@@ -30,7 +30,7 @@
                  v-for="(palace, index) in relatedPalaces" 
                  :key="index"
                  :data-type="getPalaceRelationType(palace.relation)">
-              <span class="relation-type">{{ palace.relation }}:</span>
+              <span class="relation-type">{{ palace.relation==='opposite'?'对宫':'三合宫' }}:</span>
               <span class="palace-name">{{ palace.name }}</span>
             </div>
           </div>
@@ -76,6 +76,22 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { EnhancedZiWeiSceneBase } from '../utils/EnhancedZiWeiSceneBase';
 import * as THREE from 'three';
+import { ziWeiDataManager, type PalaceData, type StarData } from '../data/ziweiConfig';
+
+// 定义访问 ZiWeiScene 属性的接口
+interface ZiWeiSceneAccess {
+  palaces: Map<string, THREE.Object3D>;
+  camera?: THREE.Camera;
+  renderer?: THREE.WebGLRenderer;
+  scene?: THREE.Scene;
+  controls?: any;
+}
+
+// 添加辅助函数
+function getSceneAccess(scene: EnhancedZiWeiSceneBase | null): ZiWeiSceneAccess | null {
+  if (!scene) return null;
+  return scene as unknown as ZiWeiSceneAccess;
+}
 
 // 接收设备类型参数
 const props = defineProps({
@@ -111,27 +127,38 @@ const showThreeSidesPanel = ref(false);
 const selectedPalace = ref('');
 const relatedPalaces = ref<Array<{name: string, relation: string}>>([]);
 
-// 宫位名称数组
-const palaceNames = [
-  '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-  '迁移', '交友', '官禄', '田宅', '福德', '父母'
-];
+// 从数据管理器获取宫位名称数组
+const palaceNames = ziWeiDataManager.getPalaceManager().getPalaceNames();
 
-// 宫位索引映射 - 按照顺时针顺序排列
-const palaceIndexMap: { [key: string]: number } = {
-  '命宫': 0,
-  '兄弟': 1,
-  '夫妻': 2,
-  '子女': 3,
-  '财帛': 4,
-  '疾厄': 5,
-  '迁移': 6,
-  '交友': 7,
-  '官禄': 8,
-  '田宅': 9,
-  '福德': 10,
-  '父母': 11
-};
+// 从数据管理器获取宫位索引映射 - 按照顺时针顺序排列
+const palaceIndexMap: { [key: string]: number } = (() => {
+  const map: { [key: string]: number } = {};
+  const palaces = ziWeiDataManager.getPalaceManager().getAllPalaces();
+  
+  // 按照x,z坐标计算宫位索引，实现顺时针排序
+  const sortedPalaces = palaces.sort((a, b) => {
+    // 计算每个宫位相对于中心点的角度
+    const angleA = Math.atan2(a.z, a.x);
+    const angleB = Math.atan2(b.z, b.x);
+    
+    // 将角度转换为0-2π范围
+    const normalizedAngleA = angleA < 0 ? angleA + 2 * Math.PI : angleA;
+    const normalizedAngleB = angleB < 0 ? angleB + 2 * Math.PI : angleB;
+    
+    // 按照顺时针方向排序（从正上方开始）
+    const clockwiseAngleA = (2 * Math.PI - normalizedAngleA + Math.PI / 2) % (2 * Math.PI);
+    const clockwiseAngleB = (2 * Math.PI - normalizedAngleB + Math.PI / 2) % (2 * Math.PI);
+    
+    return clockwiseAngleA - clockwiseAngleB;
+  });
+  
+  // 创建索引映射
+  sortedPalaces.forEach((palace, index) => {
+    map[palace.name] = index;
+  });
+  
+  return map;
+})();
 
 // 通过宫位名称选择宫位
 const selectPalace = (palaceName: string) => {
@@ -149,12 +176,19 @@ const selectPalace = (palaceName: string) => {
   }
 };
 
+// 定义关系类型常量
+const RelationType = {
+  OPPOSITE: 'opposite', // 对宫
+  TRIAD: 'triad'      // 三合宫
+};
+
 // 获取宫位关系类型
 const getPalaceRelationType = (relation: string): string => {
-  if (relation === '对宫') {
-    return 'opposite';
-  } else if (relation === '三合宫') {
-    return 'triad';
+  // 使用关系类型常量进行比较
+  if (relation === RelationType.OPPOSITE) {
+    return RelationType.OPPOSITE;
+  } else if (relation === RelationType.TRIAD) {
+    return RelationType.TRIAD;
   }
   return '';
 };
@@ -165,9 +199,38 @@ const calculateRelatedPalaces = (palaceName: string) => {
     relatedPalaces.value = [];
     return;
   }
+
+  // 获取宫位数据管理器
+  const palaceManager = ziWeiDataManager.getPalaceManager();
+  
+  // 获取所有宫位数据
+  const allPalaces = palaceManager.getAllPalaces();
+  
+  // 按照x,z坐标计算宫位索引，实现顺时针排序
+  const sortedPalaces = allPalaces.sort((a, b) => {
+    // 计算每个宫位相对于中心点的角度
+    const angleA = Math.atan2(a.z, a.x);
+    const angleB = Math.atan2(b.z, b.x);
+    
+    // 将角度转换为0-2π范围
+    const normalizedAngleA = angleA < 0 ? angleA + 2 * Math.PI : angleA;
+    const normalizedAngleB = angleB < 0 ? angleB + 2 * Math.PI : angleB;
+    
+    // 按照顺时针方向排序（从正上方开始）
+    const clockwiseAngleA = (2 * Math.PI - normalizedAngleA + Math.PI / 2) % (2 * Math.PI);
+    const clockwiseAngleB = (2 * Math.PI - normalizedAngleB + Math.PI / 2) % (2 * Math.PI);
+    
+    return clockwiseAngleA - clockwiseAngleB;
+  });
+  
+  // 创建宫位名称到索引的映射
+  const nameToIndexMap: { [key: string]: number } = {};
+  sortedPalaces.forEach((palace, index) => {
+    nameToIndexMap[palace.name] = index;
+  });
   
   // 获取宫位索引
-  const palaceIndex = palaceIndexMap[palaceName];
+  const palaceIndex = nameToIndexMap[palaceName];
   if (palaceIndex === undefined) {
     relatedPalaces.value = [];
     return;
@@ -184,29 +247,46 @@ const calculateRelatedPalaces = (palaceName: string) => {
   const firstTriadIndex = (palaceIndex + 4) % 12;
   const secondTriadIndex = (palaceIndex + 8) % 12;
   
+  
   // 添加对宫关系
-  relatedPalaces.value.push({
-    name: palaceNames[oppositeIndex],
-    relation: '对宫'
-  });
+  const oppositePalace = sortedPalaces[oppositeIndex];
+  if (oppositePalace) {
+    relatedPalaces.value.push({
+      name: oppositePalace.name,
+      relation: RelationType.OPPOSITE
+    });
+  }
   
   // 添加三合宫关系
-  relatedPalaces.value.push({
-    name: palaceNames[firstTriadIndex],
-    relation: '三合宫'
-  });
+  const firstTriadPalace = sortedPalaces[firstTriadIndex];
+  if (firstTriadPalace) {
+    relatedPalaces.value.push({
+      name: firstTriadPalace.name,
+      relation: RelationType.TRIAD
+    });
+  }
   
-  relatedPalaces.value.push({
-    name: palaceNames[secondTriadIndex],
-    relation: '三合宫'
-  });
+  const secondTriadPalace = sortedPalaces[secondTriadIndex];
+  if (secondTriadPalace) {
+    relatedPalaces.value.push({
+      name: secondTriadPalace.name,
+      relation: RelationType.TRIAD
+    });
+  }
 };
 
 // 鼠标点击事件处理
 const handleMouseClick = (event: MouseEvent) => {
   if (!ziWeiScene || !ziWeiScene.camera || !ziWeiScene.scene || !ziWeiScene.renderer) return;
   
+  // 获取宫位数据管理器
+  // const palaceManager = ziWeiDataManager.getPalaceManager();
+  
+  // 获取宫位ID前缀
+  const palaceIdPrefix = 'palace_';
+  
   // 获取鼠标位置
+  if (!ziWeiScene || !ziWeiScene.renderer) return;
   const rect = ziWeiScene.renderer.domElement.getBoundingClientRect();
   const mouse = new THREE.Vector2();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -214,13 +294,17 @@ const handleMouseClick = (event: MouseEvent) => {
   
   // 创建射线
   const raycaster = new THREE.Raycaster();
+  if (!ziWeiScene || !ziWeiScene.camera) return;
   raycaster.setFromCamera(mouse, ziWeiScene.camera);
   
   // 获取所有宫位对象
   const palaceObjects: THREE.Object3D[] = [];
-  ziWeiScene.palaces.forEach(palace => {
-    palaceObjects.push(palace);
-  });
+  const scene = getSceneAccess(ziWeiScene);
+  if (scene && scene.palaces) {
+    scene.palaces.forEach(palace => {
+      palaceObjects.push(palace);
+    });
+  }
   
   // 检测射线与宫位的交点
   const intersects = raycaster.intersectObjects(palaceObjects, true);
@@ -233,13 +317,13 @@ const handleMouseClick = (event: MouseEvent) => {
     // 从交点对象向上查找宫位组
     for (const intersect of intersects) {
       let obj = intersect.object;
-      while (obj && !obj.name.startsWith('palace_')) {
-        obj = obj.parent;
+      while (obj && !obj.name.startsWith(palaceIdPrefix)) {
+        obj = obj.parent || obj;
       }
       
-      if (obj && obj.name.startsWith('palace_')) {
+      if (obj && obj.name.startsWith(palaceIdPrefix)) {
         clickedPalace = obj;
-        palaceName = obj.name.substring(7); // 去掉"palace_"前缀
+        palaceName = obj.name.substring(palaceIdPrefix.length); // 去掉宫位ID前缀
         break;
       }
     }
@@ -254,31 +338,44 @@ const handleMouseClick = (event: MouseEvent) => {
 // 高亮选中的宫位
 const highlightSelectedPalace = (palaceName: string) => {
   if (!ziWeiScene) return;
+
+  // 获取宫位数据管理器
+  const palaceManager = ziWeiDataManager.getPalaceManager();
   
   // 先清除所有宫位的高亮
-  ziWeiScene.palaces.forEach(palace => {
-    palace.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.userData.selectedMaterial) {
-        // 恢复原始材质
-        child.material = child.userData.originalMaterial || child.material;
-        delete child.userData.selectedMaterial;
-      }
+  const scene = getSceneAccess(ziWeiScene);
+  if (scene && scene.palaces) {
+    scene.palaces.forEach(palace => {
+      palace.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.userData.selectedMaterial) {
+          // 恢复原始材质
+          child.material = child.userData.originalMaterial || child.material;
+          delete child.userData.selectedMaterial;
+        }
+      });
     });
-  });
+  }
+  
+  // 从数据管理器获取宫位数据
+  const palaceData = palaceManager.getPalaceByName(palaceName);
   
   // 高亮新选中的宫位
-  const palaceObj = ziWeiScene.palaces.get(palaceName);
-  if (palaceObj) {
+  let palaceObj: THREE.Object3D | undefined;
+  if (scene && scene.palaces) {
+    palaceObj = scene.palaces.get(palaceName);
+  }
+  if (palaceObj && palaceData) {
     palaceObj.traverse((child) => {
       if (child instanceof THREE.Mesh && child.geometry instanceof THREE.ShapeGeometry) {
         // 保存原始材质
         const originalMaterial = child.material as THREE.MeshStandardMaterial;
         child.userData.originalMaterial = originalMaterial;
         
-        // 创建选中高亮材质
+        // 使用宫位数据中的颜色创建选中高亮材质
+        const palaceColor = palaceData.color || 0xFFD700; // 默认金色
         const selectedMaterial = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(0xFFD700), // 金色
-          emissive: new THREE.Color(0xFFD700),
+          color: new THREE.Color(palaceColor),
+          emissive: new THREE.Color(palaceColor),
           emissiveIntensity: 0.3,
           metalness: originalMaterial.metalness,
           roughness: originalMaterial.roughness,
@@ -298,26 +395,33 @@ const highlightSelectedPalace = (palaceName: string) => {
 const showThreeSidesAndFourDirections = () => {
   if (!ziWeiScene || !selectedPalace.value) return;
   
-  ziWeiScene.showThreeSidesAndFourDirections(selectedPalace.value, true);
+  if (ziWeiScene) {
+    ziWeiScene.showThreeSidesAndFourDirections(selectedPalace.value, true);
+  }
 };
 
 // 清除三方四正显示
 const clearThreeSidesAndFourDirections = () => {
   if (!ziWeiScene) return;
   
-  ziWeiScene.clearThreeSidesAndFourDirections();
+  if (ziWeiScene) {
+    ziWeiScene.clearThreeSidesAndFourDirections();
+  }
   
   // 清除宫位选中高亮
-  ziWeiScene.palaces.forEach(palace => {
-    palace.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.userData.selectedMaterial) {
-        // 恢复原始材质
-        child.material = child.userData.originalMaterial || child.material;
-        delete child.userData.selectedMaterial;
-        delete child.userData.originalMaterial;
-      }
+  const scene = getSceneAccess(ziWeiScene);
+  if (scene && scene.palaces) {
+    scene.palaces.forEach(palace => {
+      palace.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.userData.selectedMaterial) {
+          // 恢复原始材质
+          child.material = child.userData.originalMaterial || child.material;
+          delete child.userData.selectedMaterial;
+          delete child.userData.originalMaterial;
+        }
+      });
     });
-  });
+  }
   
   // 清空选中的宫位和相关宫位信息
   selectedPalace.value = '';
@@ -352,7 +456,9 @@ const checkRotation = () => {
     // 如果正在旋转，立即隐藏名称
     if (isRotating) {
       showStarNames.value = false;
-      ziWeiScene.setStarNamesVisibility(false);
+      if (ziWeiScene) {
+        ziWeiScene.setStarNamesVisibility(false);
+      }
       
       // 清除之前的延迟显示
       if (rotationTimeout) {
@@ -363,7 +469,9 @@ const checkRotation = () => {
       // 如果停止旋转，延迟500ms后显示名称
       rotationTimeout = setTimeout(() => {
         showStarNames.value = true;
-        ziWeiScene.setStarNamesVisibility(true);
+        if (ziWeiScene) {
+          ziWeiScene.setStarNamesVisibility(true);
+        }
         rotationTimeout = null;
       }, 500) as unknown as number;
     }
@@ -376,36 +484,148 @@ const checkRotation = () => {
 const addSampleStars = () => {
   if (!ziWeiScene) return;
 
-  // 命宫星耀
-  ziWeiScene.addStarToPalace('命宫', '紫微', 0xff0000, new THREE.Vector3(-0.8, 0, 0));
-  ziWeiScene.addStarToPalace('命宫', '天机', 0x00ff00, new THREE.Vector3(0.8, 0, 0));
-  ziWeiScene.addStarToPalace('命宫', '太阳', 0xffff00, new THREE.Vector3(0, 0, -0.8));
-
-  // 财帛宫星耀
-  ziWeiScene.addStarToPalace('财帛', '武曲', 0x0000ff, new THREE.Vector3(-0.8, 0, 0));
-  ziWeiScene.addStarToPalace('财帛', '贪狼', 0xff00ff, new THREE.Vector3(0.8, 0, 0));
-  ziWeiScene.addStarToPalace('财帛', '天相', 0x00ffff, new THREE.Vector3(0, 0, -0.8));
-
-  // 官禄宫星耀
-  ziWeiScene.addStarToPalace('官禄', '廉贞', 0xff8800, new THREE.Vector3(-0.8, 0, 0));
-  ziWeiScene.addStarToPalace('官禄', '破军', 0x8800ff, new THREE.Vector3(0.8, 0, 0));
-  ziWeiScene.addStarToPalace('官禄', '七杀', 0xff0088, new THREE.Vector3(0, 0, -0.8));
-
-  // 夫妻宫星耀
-  ziWeiScene.addStarToPalace('夫妻', '天府', 0x00ff88, new THREE.Vector3(-0.8, 0, 0));
-  ziWeiScene.addStarToPalace('夫妻', '太阴', 0x8888ff, new THREE.Vector3(0.8, 0, 0));
-  ziWeiScene.addStarToPalace('夫妻', '巨门', 0xffff88, new THREE.Vector3(0, 0, -0.8));
+  // 从数据管理器获取星耀和宫位数据
+  const starManager = ziWeiDataManager.getStarManager();
+  const palaceManager = ziWeiDataManager.getPalaceManager();
   
-  // 父母宫星耀 - 添加9个星耀
-  ziWeiScene.addStarToPalace('父母', '左辅', 0x88ff88, new THREE.Vector3(-0.8, 0, 0));
-  ziWeiScene.addStarToPalace('父母', '右弼', 0xff8888, new THREE.Vector3(0.8, 0, 0));
-  ziWeiScene.addStarToPalace('父母', '文昌', 0x8888ff, new THREE.Vector3(0, 0, -0.8));
-  ziWeiScene.addStarToPalace('父母', '文曲', 0xffff88, new THREE.Vector3(-0.4, 0, 0.4));
-  ziWeiScene.addStarToPalace('父母', '天魁', 0xff88ff, new THREE.Vector3(0.4, 0, 0.4));
-  ziWeiScene.addStarToPalace('父母', '天钺', 0x88ffff, new THREE.Vector3(-0.4, 0, -0.4));
-  ziWeiScene.addStarToPalace('父母', '禄存', 0xffcc00, new THREE.Vector3(0.4, 0, -0.4));
-  ziWeiScene.addStarToPalace('父母', '火星', 0xff0000, new THREE.Vector3(0, 0, 0.8));
-  ziWeiScene.addStarToPalace('父母', '铃星', 0x9900ff, new THREE.Vector3(0, 0, 0));
+  // 获取所有宫位数据
+  const allPalaces = palaceManager.getAllPalaces();
+  
+  // 按照x,z坐标计算宫位索引，实现顺时针排序
+  const sortedPalaces = allPalaces.sort((a, b) => {
+    // 计算每个宫位相对于中心点的角度
+    const angleA = Math.atan2(a.z, a.x);
+    const angleB = Math.atan2(b.z, b.x);
+    
+    // 将角度转换为0-2π范围
+    const normalizedAngleA = angleA < 0 ? angleA + 2 * Math.PI : angleA;
+    const normalizedAngleB = angleB < 0 ? angleB + 2 * Math.PI : angleB;
+    
+    // 按照顺时针方向排序（从正上方开始）
+    const clockwiseAngleA = (2 * Math.PI - normalizedAngleA + Math.PI / 2) % (2 * Math.PI);
+    const clockwiseAngleB = (2 * Math.PI - normalizedAngleB + Math.PI / 2) % (2 * Math.PI);
+    
+    return clockwiseAngleA - clockwiseAngleB;
+  });
+  
+  // 创建宫位名称到索引的映射
+  const nameToIndexMap: { [key: string]: number } = {};
+  sortedPalaces.forEach((palace, index) => {
+    nameToIndexMap[palace.name] = index;
+  });
+  
+  // 获取主星（紫微星系）
+  const majorStars = starManager.getStarsByType('major');
+  
+  // 获取辅星（乙级辅星）
+  const assistantStars = starManager.getStarsByType('yijifuxing');
+  
+  // 获取煞星（六煞星）
+  const shaStars = starManager.getStarsByType('sixyao');
+  
+  // 按照宫位顺序添加星耀
+  // 紫微星系：前3颗主星到第一个宫位（命宫）
+  const firstPalace = sortedPalaces[0];
+  if (firstPalace) {
+    // 取前3颗主星
+    const firstPalaceStars = majorStars.slice(0, 3);
+    
+    // 添加到第一个宫位
+    firstPalaceStars.forEach((star, index) => {
+      const position = index === 0 ? new THREE.Vector3(-0.8, 0, 0) : 
+                     index === 1 ? new THREE.Vector3(0.8, 0, 0) : 
+                     new THREE.Vector3(0, 0, -0.8);
+      if (ziWeiScene) {
+        ziWeiScene.addStarToPalace(firstPalace.name, star.name, star.color || 0xffffff, position);
+      }
+    });
+  }
+  
+  // 紫微星系：后3颗主星到第二个宫位（财帛宫）
+  const secondPalace = sortedPalaces[2]; // 财帛宫是第3个宫位（索引2）
+  if (secondPalace) {
+    // 取后3颗主星
+    const secondPalaceStars = majorStars.slice(3, 6);
+    
+    // 添加到第二个宫位
+    secondPalaceStars.forEach((star, index) => {
+      const position = index === 0 ? new THREE.Vector3(-0.8, 0, 0) : 
+                     index === 1 ? new THREE.Vector3(0.8, 0, 0) : 
+                     new THREE.Vector3(0, 0, -0.8);
+      if (ziWeiScene) {
+        ziWeiScene.addStarToPalace(secondPalace.name, star.name, star.color || 0xffffff, position);
+      }
+    });
+  }
+  
+  // 天府星系：前3颗主星到第四个宫位（官禄宫）
+  const fourthPalace = sortedPalaces[4]; // 官禄宫是第5个宫位（索引4）
+  if (fourthPalace) {
+    // 取天府星系前3颗主星
+    const fourthPalaceStars = majorStars.slice(6, 9);
+    
+    // 添加到第四个宫位
+    fourthPalaceStars.forEach((star, index) => {
+      const position = index === 0 ? new THREE.Vector3(-0.8, 0, 0) : 
+                     index === 1 ? new THREE.Vector3(0.8, 0, 0) : 
+                     new THREE.Vector3(0, 0, -0.8);
+      if (ziWeiScene) {
+        ziWeiScene.addStarToPalace(fourthPalace.name, star.name, star.color || 0xffffff, position);
+      }
+    });
+  }
+  
+  // 天府星系：后3颗主星到第六个宫位（夫妻宫）
+  const sixthPalace = sortedPalaces[6]; // 夫妻宫是第7个宫位（索引6）
+  if (sixthPalace) {
+    // 取天府星系后3颗主星
+    const sixthPalaceStars = majorStars.slice(9, 12);
+    
+    // 添加到第六个宫位
+    sixthPalaceStars.forEach((star, index) => {
+      const position = index === 0 ? new THREE.Vector3(-0.8, 0, 0) : 
+                     index === 1 ? new THREE.Vector3(0.8, 0, 0) : 
+                     new THREE.Vector3(0, 0, -0.8);
+      if (ziWeiScene) {
+        ziWeiScene.addStarToPalace(sixthPalace.name, star.name, star.color || 0xffffff, position);
+      }
+    });
+  }
+  
+  // 父母宫 - 添加辅星和煞星
+  const seventhPalace = sortedPalaces[11]; // 父母宫是第12个宫位（索引11）
+  if (seventhPalace) {
+    // 取6颗辅星和3颗煞星
+    const seventhPalaceStars = [...assistantStars.slice(0, 6), ...shaStars.slice(0, 3)];
+    
+    // 添加到第七个宫位
+    seventhPalaceStars.forEach((star, index) => {
+      let position: THREE.Vector3;
+      
+      // 根据索引计算位置
+      if (index < 3) {
+        // 前3颗星，排列在左、右、下
+        position = index === 0 ? new THREE.Vector3(-0.8, 0, 0) : 
+                  index === 1 ? new THREE.Vector3(0.8, 0, 0) : 
+                  new THREE.Vector3(0, 0, -0.8);
+      } else {
+        // 后3颗星，排列在左上、右上、右下
+        position = index === 3 ? new THREE.Vector3(-0.4, 0, 0.4) : 
+                  index === 4 ? new THREE.Vector3(0.4, 0, 0.4) : 
+                  new THREE.Vector3(0, 0, 0.8);
+      }
+      
+      if (ziWeiScene) {
+        ziWeiScene.addStarToPalace(seventhPalace.name, star.name, star.color || 0xffffff, position);
+      }
+    });
+  }
+
+
+
+
+
+  
 };
 
 // 初始化Three.js场景
@@ -414,9 +634,12 @@ const init = () => {
 
   // 创建紫微斗数场景管理器
   ziWeiScene = new EnhancedZiWeiSceneBase(container.value);
-  ziWeiScene.initZiWeiScene();
+  if (ziWeiScene) {
+    ziWeiScene.initZiWeiScene();
+  }
 
   // 根据设备类型调整相机位置和倾斜角度
+  if (!ziWeiScene) return;
   const camera = ziWeiScene.camera;
   if (camera) {
     if (props.isMobile) {
@@ -438,6 +661,7 @@ const init = () => {
   }
 
   // 确保渲染器占满整个窗口
+  if (!ziWeiScene || !ziWeiScene.renderer) return;
   const renderer = ziWeiScene.renderer;
   if (renderer) {
     // 使用窗口尺寸而不是容器尺寸，确保全屏显示
@@ -449,6 +673,7 @@ const init = () => {
   // 监听容器大小变化
   handleResize = () => {
     if (!container.value || !ziWeiScene) return;
+    if (!ziWeiScene || !ziWeiScene.camera || !ziWeiScene.renderer) return;
     const camera = ziWeiScene.camera;
     const renderer = ziWeiScene.renderer;
 
@@ -467,32 +692,41 @@ const init = () => {
   window.addEventListener('resize', handleResize);
 
   // 保存清理函数
-  ziWeiScene.addCleanupCallback(() => {
-    if (handleResize) {
-      window.removeEventListener('resize', handleResize);
-    }
-  });
+  if (ziWeiScene) {
+    ziWeiScene.addCleanupCallback(() => {
+      if (handleResize) {
+        window.removeEventListener('resize', handleResize);
+      }
+    });
+  }
 
   // 添加示例星耀
   addSampleStars();
 
   // 开始动画循环
-  ziWeiScene.startZiWeiAnimation();
+  if (ziWeiScene) {
+    ziWeiScene.startZiWeiAnimation();
+  }
   
   // 添加旋转检查回调
-  ziWeiScene.addAnimationCallback(checkRotation);
+  if (ziWeiScene) {
+    ziWeiScene.addAnimationCallback(checkRotation);
+  }
   
   // 添加鼠标点击事件监听器
-  ziWeiScene.renderer.domElement.addEventListener('click', handleMouseClick);
+  const scene = getSceneAccess(ziWeiScene);
+  if (scene && scene.renderer) {
+    scene.renderer.domElement.addEventListener('click', handleMouseClick);
+  }
 };
 
 // 根据设备类型调整场景
 const adjustSceneForDevice = () => {
-  if (!ziWeiScene) return;
-
-  const camera = ziWeiScene.camera;
-  const renderer = ziWeiScene.renderer;
-  const controls = ziWeiScene.controls;
+  const scene = getSceneAccess(ziWeiScene);
+  if (!scene || !scene.camera || !scene.renderer || !scene.controls) return;
+  const camera = scene.camera;
+  const renderer = scene.renderer;
+  const controls = scene.controls;
 
   if (camera) {
     if (props.isMobile) {
@@ -574,14 +808,14 @@ onMounted(() => {
   // 监听设备类型变化事件
   const handleDeviceTypeChange = (event: Event) => {
     const customEvent = event as CustomEvent<{ isMobile: boolean, isTablet: boolean }>;
-    const { isMobile, isTablet } = customEvent.detail
+    const { isMobile, isTablet } = customEvent.detail;
     // 使用这些变量进行某些操作
     if (isMobile || isTablet) {
       // 执行某些特定逻辑
     }
     // 强制触发场景调整
     setTimeout(() => {
-      handleResize && handleResize()
+      handleResize && handleResize();
     }, 100)
   }
 

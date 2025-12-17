@@ -1,4 +1,3 @@
-
 // 创建类型别名
 export type StarType = typeof StarType[keyof typeof StarType];
 export type StarElement = typeof StarElement[keyof typeof StarElement];
@@ -152,7 +151,7 @@ export class StarDataManager {
       { id: 'star_wuqu', name: '武曲', type: StarType.MAJOR, color: 0x4169E1, element: StarElement.YANG },
       { id: 'star_tianxiong', name: '天同', type: StarType.MAJOR, color: 0xFFB6C1, element: StarElement.YANG },
       { id: 'star_lianzhen', name: '廉贞', type: StarType.MAJOR, color: 0x8B0000, element: StarElement.YIN },
-      
+
       // 天府星系（8颗）
       { id: 'star_tianfu', name: '天府', type: StarType.MAJOR, color: 0x32CD32, element: StarElement.YANG },
       { id: 'star_taiyin', name: '太阴', type: StarType.MAJOR, color: 0xE6E6FA, element: StarElement.YIN },
@@ -183,7 +182,7 @@ export class StarDataManager {
       { id: 'star_wenqu', name: '文曲', type: StarType.YIJIFUXING, color: 0x4169E1, element: StarElement.YIN },
       { id: 'star_luzhen', name: '禄存', type: StarType.YIJIFUXING, color: 0xFFD700, element: StarElement.YIN },
       { id: 'star_tianma', name: '天马', type: StarType.YIJIFUXING, color: 0xFF4500, element: StarElement.YANG },
-      
+
       // 煞星/杂曜
       { id: 'star_qingyang', name: '擎羊', type: StarType.YIJIFUXING, color: 0xFF0000, element: StarElement.YANG },
       { id: 'star_tuoluo', name: '陀罗', type: StarType.YIJIFUXING, color: 0x800080, element: StarElement.YIN },
@@ -191,7 +190,7 @@ export class StarDataManager {
       { id: 'star_lingxing', name: '铃星', type: StarType.YIJIFUXING, color: 0x800080, element: StarElement.YIN },
       { id: 'star_disha', name: '地空', type: StarType.YIJIFUXING, color: 0x87CEEB, element: StarElement.YANG },
       { id: 'star_dijie', name: '地劫', type: StarType.YIJIFUXING, color: 0x800080, element: StarElement.YIN },
-      
+
       // 特殊辅星
       { id: 'star_tianguan', name: '天官', type: StarType.YIJIFUXING, color: 0x32CD32, element: StarElement.YANG },
       { id: 'star_tianfu', name: '天福', type: StarType.YIJIFUXING, color: 0xFF6347, element: StarElement.YANG },

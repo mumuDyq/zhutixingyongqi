@@ -89,7 +89,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     
     // 根据视场角和命盘大小计算最佳距离，使命盘适配屏幕
     const fov = this.camera.fov * (Math.PI / 180); // 将视场角转换为弧度
-    const chartRadius = 8; // 命盘半径
+    const chartRadius = 13; // 命盘半径
     
     // 计算使整个命盘适配屏幕所需的距离
     // 考虑当前视角方向，使用视场角计算

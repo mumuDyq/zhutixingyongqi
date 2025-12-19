@@ -654,7 +654,7 @@ const init = () => {
       camera.lookAt(0, 0, 0);
     } else {
       // 桌面端设置最佳倾斜视角
-      const distance = 15;
+      const distance = 18;
       camera.position.set(0, distance * 0.6, distance * 0.6); // 45度倾斜角
       camera.lookAt(0, 0, 0);
     }
@@ -748,7 +748,7 @@ const adjustSceneForDevice = () => {
       }
     } else {
       // 桌面端设置最佳倾斜视角
-      const distance = 15;
+      const distance = 18;
       camera.position.set(0, distance * 0.6, distance * 0.6); // 45度倾斜角
       camera.lookAt(0, 0, 0);
       if (renderer) {

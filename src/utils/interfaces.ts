@@ -9,3 +9,5 @@ export interface IModelManager {
   removeModelFromScene(model: THREE.Object3D): void;
   disposeModel(model: THREE.Object3D): void;
 }
+
+

@@ -1,5 +1,25 @@
 import { EnhancedThreeSceneBase } from './EnhancedThreeSceneBase';
 import * as THREE from 'three';
+import { ziWeiDataManager } from './ZiWeiData';
+
+// 定义必要的类型
+interface PalaceData {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  color?: number;
+  description?: string;
+}
+
+interface StarData {
+  id: string;
+  name: string;
+  color?: number;
+  type: string;
+  description?: string;
+  element?: string;
+}
 
 // 定义宫位位置类型
 interface PalacePosition {
@@ -18,9 +38,76 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   protected ziWeiChart: THREE.Group | null = null;
   protected palaces: Map<string, THREE.Object3D> = new Map();
   protected taiji: THREE.Group | null = null;
+  
+  // 三方四正动画标志
+  private threeSidesAnimationAdded: boolean = false;
+
+  // 使用 ZiWeiDataManager 获取宫位数据
+  protected get palaceNames(): string[] {
+    return ziWeiDataManager.getPalaceManager().getPalaceNames();
+  }
 
   constructor(container: HTMLElement) {
     super(container);
+    // 添加键盘事件监听
+    this.setupKeyboardEvents();
+  }
+
+  /**
+   * 设置键盘事件监听
+   */
+  private setupKeyboardEvents(): void {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // 按下空格键时执行适配屏幕功能
+      if (event.code === 'Space') {
+        event.preventDefault();
+        this.fitToScreen();
+      }
+    };
+
+    // 添加键盘事件监听
+    window.addEventListener('keydown', handleKeyDown);
+
+    // 添加清理回调，在对象销毁时移除事件监听
+    this.addCleanupCallback(() => {
+      window.removeEventListener('keydown', handleKeyDown);
+    });
+  }
+
+  /**
+   * 缩放命盘至适配屏幕，保持当前视角只调整大小，同时将命盘中心回到坐标原点
+   */
+  public fitToScreen(): void {
+    if (!this.camera || !this.controls) return;
+
+    // 保存当前相机位置
+    const currentPosition = this.camera.position.clone();
+    
+    // 计算相机到当前目标点的方向向量
+    const currentTarget = this.controls.target.clone();
+    const direction = new THREE.Vector3().subVectors(currentPosition, currentTarget).normalize();
+    
+    // 根据视场角和命盘大小计算最佳距离，使命盘适配屏幕
+    const fov = this.camera.fov * (Math.PI / 180); // 将视场角转换为弧度
+    const chartRadius = 13; // 命盘半径
+    
+    // 计算使整个命盘适配屏幕所需的距离
+    // 考虑当前视角方向，使用视场角计算
+    const optimalDistance = chartRadius / Math.tan(fov / 2) * 0.9; // 0.9是留出一些边距
+    
+    // 计算新的相机位置，保持原有方向但调整距离，目标点设为原点
+    const origin = new THREE.Vector3(0, 0, 0);
+    const newPosition = new THREE.Vector3().addVectors(
+      origin, 
+      direction.multiplyScalar(optimalDistance)
+    );
+    
+    // 设置新的相机位置和目标点
+    this.camera.position.copy(newPosition);
+    this.controls.target.copy(origin);
+    
+    // 更新控制器
+    this.controls.update();
   }
 
   /**
@@ -35,6 +122,38 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
     // 创建紫微斗数盘
     this.createZiWeiChart();
+
+    // 添加星耀动态缩放功能
+    this.addStarScalingCallback();
+  }
+
+  /**
+   * 添加星耀动态缩放功能
+   */
+  private addStarScalingCallback(): void {
+    // 添加动画回调，用于动态调整星耀大小
+    this.addAnimationCallback(() => {
+      if (!this.camera || !this.ziWeiChart) return;
+
+      // 遍历所有星耀组
+      this.ziWeiChart.traverse((child) => {
+        if (child instanceof THREE.Group && child.name.startsWith('star_')) {
+          // 计算星耀与相机的距离
+          const distance = this.camera!.position.distanceTo(child.position);
+
+          // 根据距离动态调整缩放比例，距离越远缩放越大
+          // 使用对数函数使缩放更加平滑
+          const scale = 1 + Math.log(Math.max(distance / 5, 1)) * 0.5;
+
+          // 限制最大缩放比例，防止星耀过大
+          const maxScale = 2.5;
+          const finalScale = Math.min(scale, maxScale);
+
+          // 应用缩放
+          child.scale.set(finalScale, finalScale, finalScale);
+        }
+      });
+    });
   }
 
   /**
@@ -99,17 +218,29 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   protected createBasePlate(): void {
     if (!this.ziWeiChart) return;
 
-    // 主底盘 - 使用4x4正方形平面
+    // 主底盘 - 使用4x4正方形平面，增加厚度和边缘
     const plateSize = 16; // 正方形边长
-    const plateGeometry = new THREE.PlaneGeometry(plateSize, plateSize);
+    const plateThickness = 0.2; // 增加厚度
+    const plateGeometry = new THREE.BoxGeometry(plateSize, plateThickness, plateSize);
     const plateMaterial = new THREE.MeshStandardMaterial({
       color: 0x1a0e2e,
       metalness: 0.5,
       roughness: 0.5
     });
     const plate = new THREE.Mesh(plateGeometry, plateMaterial);
-    plate.rotation.x = -Math.PI / 2;
+    plate.position.y = -plateThickness / 2; // 调整位置，使顶部与地面齐平
     this.ziWeiChart.add(plate);
+    
+    // 添加边缘高光效果
+    const edgeGeometry = new THREE.BoxGeometry(plateSize + 0.1, plateThickness + 0.05, plateSize + 0.1);
+    const edgeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a1e3e,
+      metalness: 0.7,
+      roughness: 0.3
+    });
+    const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
+    edge.position.y = -plateThickness / 2;
+    this.ziWeiChart.add(edge);
 
     // 添加网格线，增强视觉效果
     const gridMaterial = new THREE.LineBasicMaterial({
@@ -271,40 +402,16 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   protected createPalaces(): void {
     if (!this.ziWeiChart) return;
 
-    // 紫微斗数十二宫位名称（使用更完整的名称）
-    const palaceNames = [
-      '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-      '迁移', '奴仆', '官禄', '田宅', '福德', '父母'
-    ];
-
-    const palaceNames2 = [
-      '命宫', '兄弟', '夫妻', '子女', '财帛', '疾厄',
-      '迁移', '奴仆', '官禄', '田宅', '福德', '父母'
-    ];
+    // 使用 ZiWeiDataManager 获取宫位数据
+    const palaceData = ziWeiDataManager.getPalaceManager().getAllPalaces();
 
     // 传统紫微斗数命盘布局 - 参考文墨天机软件的宫位排列顺序
     // 命盘呈方形，十二宫位按照传统命盘排列
-    const gridPositions: PalacePosition[] = [
-      // 上方三宫（从左到右）
-      { x: -6, z: 6, name: '父母' },
-      { x: -2, z: 6, name: '福德' },
-      { x: 2, z: 6, name: '田宅' },
-
-      // 右侧三宫（从上到下）
-      { x: 6, z: 6, name: '官禄' },
-      { x: 6, z: 2, name: '奴仆' },
-      { x: 6, z: -2, name: '迁移' },
-
-      // 下方三宫（从右到左）
-      { x: 6, z: -6, name: '疾厄' },
-      { x: 2, z: -6, name: '财帛' },
-      { x: -2, z: -6, name: '子女' },
-
-      // 左侧三宫（从下到上）
-      { x: -6, z: -6, name: '夫妻' },
-      { x: -6, z: -2, name: '兄弟' },
-      { x: -6, z: 2, name: '命宫' }
-    ];
+    const gridPositions: PalacePosition[] = palaceData.map(palace => ({
+      x: palace.x,
+      z: palace.z,
+      name: palace.name
+    }));
 
     // 创建连接线，表示宫位之间的关系
     this.createPalaceConnections();
@@ -328,7 +435,8 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       // 创建更大的矩形宫位底座
       const palaceWidth = 3.8; // 增大宫位宽度
       const palaceDepth = 3.8; // 增大宫位深度
-      const palaceHeight = 0.15; // 宫位高度
+      const palaceHeight = 0.15; // 增加宫位高度，增强3D效果
+      const palaceElevation = 0.02; // 宫位离底盘的高度
 
       // 创建平面的圆角矩形底座
       const roundedRectShape = new THREE.Shape();
@@ -346,34 +454,21 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       roundedRectShape.lineTo(-width / 2, -height / 2 + radius);
       roundedRectShape.quadraticCurveTo(-width / 2, -height / 2, -width / 2 + radius, -height / 2);
 
-      // 创建平面几何体，不进行拉伸
-      const palaceGeometry = new THREE.ShapeGeometry(roundedRectShape);
+      // 创建立体几何体，增加3D效果
+      const palaceGeometry = new THREE.ExtrudeGeometry(roundedRectShape, {
+        depth: palaceHeight,
+        bevelEnabled: true,
+        bevelThickness: 0.02,
+        bevelSize: 0.02,
+        bevelSegments: 3
+      });
 
-      // 根据宫位创建不同颜色，使用传统紫微斗数配色
-      let palaceColor;
-      switch (palaceNames[i]) {
-        case '命宫':
-        case '财帛':
-        case '官禄':
-          palaceColor = new THREE.Color(0x8B0000); // 暗红色
-          break;
-        case '夫妻':
-        case '子女':
-        case '迁移':
-          palaceColor = new THREE.Color(0x00008B); // 暗蓝色
-          break;
-        case '兄弟':
-        case '疾厄':
-        case '奴仆':
-          palaceColor = new THREE.Color(0x006400); // 暗绿色
-          break;
-        case '田宅':
-        case '福德':
-        case '父母':
-        default:
-          palaceColor = new THREE.Color(0x4B0082); // 暗紫色
-          break;
-      }
+      // 从 ZiWeiDataManager 获取宫位数据
+      const palaceData = ziWeiDataManager.getPalaceByName(position.name);
+      // 使用宫位数据中的颜色，如果没有则使用默认颜色
+      const palaceColor = palaceData?.color ? 
+        new THREE.Color(palaceData.color) : 
+        new THREE.Color(0x4B0082); // 默认暗紫色
 
       const palaceMaterial = new THREE.MeshStandardMaterial({
         color: palaceColor,
@@ -385,14 +480,19 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
       const palace = new THREE.Mesh(palaceGeometry, palaceMaterial);
       palace.rotation.x = -Math.PI / 2;
-      palace.position.y = 0.01; // 完全贴合底盘
+      // 调整位置，使宫位底部离底盘有一定高度
+      palace.position.y = palaceElevation;
+      // 调整Z轴位置，使宫位中心与底盘对齐
+      palace.position.z = palaceHeight / 2;
       palaceGroup.add(palace);
 
-      // 添加平面边框
+      // 添加立体边框
       const borderShape = new THREE.Shape();
       const borderWidth = palaceWidth + 0.2;
       const borderHeight = palaceDepth + 0.2;
       const borderRadius = 0.3;
+      const borderThickness = 0.05; // 边框厚度
+      const borderElevation = palaceElevation + 0.01; // 边框离底盘的高度
 
       borderShape.moveTo(-borderWidth / 2 + borderRadius, -borderHeight / 2);
       borderShape.lineTo(borderWidth / 2 - borderRadius, -borderHeight / 2);
@@ -404,8 +504,14 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       borderShape.lineTo(-borderWidth / 2, -borderHeight / 2 + borderRadius);
       borderShape.quadraticCurveTo(-borderWidth / 2, -borderHeight / 2, -borderWidth / 2 + borderRadius, -borderHeight / 2);
 
-      // 创建平面边框几何体
-      const borderGeometry = new THREE.ShapeGeometry(borderShape);
+      // 创建立体边框几何体
+      const borderGeometry = new THREE.ExtrudeGeometry(borderShape, {
+        depth: borderThickness,
+        bevelEnabled: true,
+        bevelThickness: 0.01,
+        bevelSize: 0.01,
+        bevelSegments: 2
+      });
 
       const borderMaterial = new THREE.MeshStandardMaterial({
         color: new THREE.Color(0xDAA520), // 金色
@@ -417,11 +523,14 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
       const border = new THREE.Mesh(borderGeometry, borderMaterial);
       border.rotation.x = -Math.PI / 2;
-      border.position.y = 0.02; // 稍微高于宫位，但仍然是平面的
+      // 调整位置，使边框底部离底盘有一定高度
+      border.position.y = borderElevation;
+      // 调整Z轴位置，使边框中心与底盘对齐
+      border.position.z = borderThickness / 2;
       palaceGroup.add(border);
 
-      // 设置宫格位置
-      palaceGroup.position.set(x, 0, z); // 完全贴合底盘
+      // 设置宫格位置，使宫位离底盘有一定高度
+      palaceGroup.position.set(x, 0, z);
       palaceGroup.name = `palace_${palaceName}`;
 
       this.ziWeiChart.add(palaceGroup);
@@ -431,8 +540,8 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
       // 创建文字标签 - 使用传统书法风格
       const labelCanvas = document.createElement('canvas');
-      labelCanvas.width = 512; // 增大画布尺寸
-      labelCanvas.height = 256;
+      labelCanvas.width = 640; // 进一步增大画布尺寸
+      labelCanvas.height = 320;
       const labelContext = labelCanvas.getContext('2d')!;
 
       // 创建渐变背景 - 使用传统中国风配色
@@ -448,7 +557,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       labelContext.strokeRect(0, 0, labelCanvas.width, labelCanvas.height);
 
       // 添加文字 - 使用书法风格
-      labelContext.font = 'bold 72px "KaiTi", "楷体", serif'; // 增大字体
+      labelContext.font = 'bold 90px "KaiTi", "楷体", serif'; // 进一步增大字体
       labelContext.fillStyle = '#FFD700'; // 金色文字
       labelContext.textAlign = 'center';
       labelContext.textBaseline = 'middle';
@@ -467,18 +576,19 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
         transparent: true
       });
       const labelSprite = new THREE.Sprite(labelSpriteMaterial);
-      labelSprite.scale.set(4, 2, 1); // 增大标签尺寸
+      labelSprite.scale.set(4, 2, 1); // 进一步增大标签尺寸，确保宫位名称完整显示
 
       // 设置标签位置 - 向上移动，确保完整显示
-      labelSprite.position.set(x, 0.3, z); // 进一步提高标签位置
+      labelSprite.position.set(x, 0.5, z); // 提高标签位置，避免被宫位遮挡
       labelSprite.name = `label_${palaceName}`;
 
       this.ziWeiChart.add(labelSprite);
 
       // 创建星耀容器（用于放置星耀）
       const starsContainer = new THREE.Group();
-      starsContainer.position.set(x, 0.03, z); // 进一步降低高度，使其更贴近宫位
-      starsContainer.name = `stars_${palaceNames[i]}`;
+      // 将星耀容器放在宫位上方更高位置
+      starsContainer.position.set(x, palaceHeight + 2.5, z); // 进一步提高星耀位置
+      starsContainer.name = `stars_${this.palaceNames[i]}`;
       this.ziWeiChart.add(starsContainer);
     }
   }
@@ -507,15 +617,15 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
 
       { from: { x: -6, z: 2 }, to: { x: -2, z: 2 } }, // 迁移 -> 疾厄
 
-      { from: { x: 6, z: -2 }, to: { x: -2, z: -2 } }, // 奴仆 -> 官禄
+      { from: { x: 6, z: -2 }, to: { x: -2, z: -2 } }, // 交友 -> 官禄
       { from: { x: -2, z: -2 }, to: { x: -6, z: -2 } }, // 官禄 -> 田宅
 
       { from: { x: 6, z: -6 }, to: { x: 2, z: -6 } }, // 福德 -> 父母
 
       // 纵向连接
       { from: { x: 6, z: 6 }, to: { x: 6, z: 2 } }, // 命宫 -> 财帛
-      { from: { x: 6, z: 2 }, to: { x: 6, z: -2 } }, // 财帛 -> 奴仆
-      { from: { x: 6, z: -2 }, to: { x: 6, z: -6 } }, // 奴仆 -> 福德
+      { from: { x: 6, z: 2 }, to: { x: 6, z: -2 } }, // 财帛 -> 交友
+      { from: { x: 6, z: -2 }, to: { x: 6, z: -6 } }, // 交友 -> 福德
 
       { from: { x: 2, z: 6 }, to: { x: 2, z: 2 } }, // 兄弟 -> 疾厄
       { from: { x: 2, z: -6 }, to: { x: 2, z: 6 } }, // 父母 -> 兄弟
@@ -531,7 +641,7 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       { from: { x: 2, z: 6 }, to: { x: -6, z: 2 } }, // 兄弟 -> 迁移
       { from: { x: -2, z: 6 }, to: { x: -6, z: -2 } }, // 夫妻 -> 田宅
       { from: { x: 6, z: 2 }, to: { x: -2, z: -2 } }, // 财帛 -> 官禄
-      { from: { x: 6, z: -2 }, to: { x: 2, z: -6 } }, // 奴仆 -> 父母
+      { from: { x: 6, z: -2 }, to: { x: 2, z: -6 } }, // 交友 -> 父母
       { from: { x: -2, z: -2 }, to: { x: 2, z: -6 } } // 官禄 -> 父母
     ];
 
@@ -678,16 +788,36 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
   }
 
   /**
+   * 设置星耀名称的可见性
+   * @param visible 是否可见
+   */
+  public setStarNamesVisibility(visible: boolean): void {
+    if (!this.ziWeiChart) return;
+
+    // 遍历所有星耀名称精灵
+    this.ziWeiChart.traverse((child) => {
+      if (child instanceof THREE.Sprite && child.userData.isStarName) {
+        child.visible = visible;
+      }
+
+      // 同时控制连接线的可见性
+      if (child instanceof THREE.Line && child.userData.isStarNameLine) {
+        child.visible = visible;
+      }
+    });
+  }
+
+  /**
    * 在指定宫位添加星耀
    * @param palaceName 宫位名称
    * @param starName 星耀名称
-   * @param starColor 星耀颜色
+   * @param starColor 星耀颜色（可选，如果不提供则使用 ZiWeiDataManager 中的默认颜色）
    * @param position 星耀在宫位内的相对位置
    */
   public addStarToPalace(
     palaceName: string,
     starName: string,
-    starColor: number = 0xffffff,
+    starColor?: number,
     position: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
   ): void {
     if (!this.ziWeiChart) {
@@ -702,43 +832,157 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       return;
     }
 
-    // 创建星耀球体
-    const starGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+    // 获取当前宫位已有的星耀数量，用于有序排列
+    const existingStars = starsContainer.children.filter(child => child.name.startsWith('star_'));
+    const starIndex = existingStars.length;
+
+    // 根据星耀索引计算从上到下依次排列的位置
+    const spacing = 0.6; // 增大星耀之间的间距
+
+    // 采用网格布局：每行最多3个星耀
+    const row = Math.floor(starIndex / 3);
+    const col = starIndex % 3;
+
+    // 计算相对于宫位中心的偏移
+    const offsetX = (col - 1) * spacing; // 水平居中，左右分布
+    const offsetZ = (1.5 - row) * spacing; // 从上到下排列，中心为0
+
+    // 设置位置
+    position.x = offsetX;
+    position.z = offsetZ;
+
+
+
+
+
+
+
+    // 创建星耀名称精灵
+    const nameCanvas = document.createElement('canvas');
+    nameCanvas.width = 256;
+    nameCanvas.height = 256;
+    const nameContext = nameCanvas.getContext('2d')!;
+
+    // 不绘制背景，只保留文字
+
+    // 绘制星耀名称 - 增大字体尺寸
+    nameContext.font = 'bold 80px "KaiTi", "楷体", serif';
+    nameContext.fillStyle = '#ffffff';
+    nameContext.strokeStyle = '#000000';
+    nameContext.lineWidth = 4;
+    nameContext.textAlign = 'center';
+    nameContext.textBaseline = 'middle';
+    nameContext.shadowColor = 'rgba(0, 0, 0, 1)';
+    nameContext.shadowBlur = 8;
+
+    // 先描边再填充，确保文字清晰可见
+    nameContext.strokeText(starName, 128, 128);
+    nameContext.fillText(starName, 128, 128);
+
+    // 创建带有文字的纹理
+    const nameTexture = new THREE.CanvasTexture(nameCanvas);
+    nameTexture.needsUpdate = true;
+
+    // 创建星耀精灵 - 使用精灵代替球体，使文字始终面向屏幕
+
+    // 从 ZiWeiDataManager 获取星耀数据，如果没有提供颜色则使用默认颜色
+    const starData = ziWeiDataManager.getStarByName(starName);
+    const finalStarColor = starColor ?? starData?.color ?? 0xffffff;
+    
+    // 创建星耀球体 - 减小尺寸
+    const starGeometry = new THREE.SphereGeometry(0.15, 32, 16);
     const starMaterial = new THREE.MeshStandardMaterial({
-      color: starColor,
-      emissive: starColor,
-      emissiveIntensity: 0.4,
-      metalness: 0.6,
+      color: finalStarColor,
+      emissive: finalStarColor,
+      emissiveIntensity: 0.6,
+      metalness: 0.7,
       roughness: 0.3
     });
     const star = new THREE.Mesh(starGeometry, starMaterial);
 
-    // 设置星耀位置
-    star.position.copy(position);
+    // 创建星耀名称精灵
+    const nameSpriteMaterial = new THREE.SpriteMaterial({
+      map: nameTexture,
+      color: 0xffffff,
+      transparent: true,
+      alphaTest: 0.01
+    });
+    const nameSprite = new THREE.Sprite(nameSpriteMaterial);
 
-    // 创建星耀名称标签
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 64;
-    const context = canvas.getContext('2d')!;
-    context.fillStyle = 'rgba(0, 0, 0, 0)';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.font = 'bold 24px Arial';
-    context.fillStyle = '#ffffff';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(starName, canvas.width / 2, canvas.height / 2);
+    // 标记为星耀名称，便于控制可见性
+    nameSprite.userData.isStarName = true;
 
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(spriteMaterial);
-    sprite.scale.set(1.2, 0.6, 1);
-    sprite.position.set(0, 0.6, 0);
+    // 设置名称精灵大小 - 增大名称大小以提高可读性
+    nameSprite.scale.set(0.8, 0.8, 1); // 增大名称大小
+
+    // 创建一个小球代表星耀
+    const starSphereGeometry = new THREE.SphereGeometry(0.005, 16, 16); // 极小球体半径
+    const starSphereMaterial = new THREE.MeshStandardMaterial({
+      color: finalStarColor, // 使用星耀的颜色
+      emissive: finalStarColor, // 添加发光效果
+      emissiveIntensity: 0.2, // 大幅降低发光强度
+      metalness: 0.3, // 降低金属感
+      roughness: 0.7, // 增加粗糙度
+      transparent: true, // 添加透明度
+      opacity: 0.5 // 降低不透明度
+    });
+    const starSphere = new THREE.Mesh(starSphereGeometry, starSphereMaterial);
+
+    // 限制星耀位置在宫位范围内
+    const boundedPosition = position.clone();
+    // 限制X和Z坐标在宫位范围内
+    boundedPosition.x = Math.max(-1.5, Math.min(1.5, boundedPosition.x));
+    boundedPosition.z = Math.max(-1.5, Math.min(1.5, boundedPosition.z));
+    // 设置Y坐标为0，因为容器已经在正确的高度
+    boundedPosition.y = 0;
+    star.position.copy(boundedPosition);
+
+    // 将星耀名称放在星耀上方
+    // 计算名称位置，直接在星耀上方
+    const nameX = boundedPosition.x;
+    const nameZ = boundedPosition.z;
+    const nameY = boundedPosition.y + 0.5; // 在星耀上方0.5单位，适应更小的星耀
+
+
+    nameSprite.position.set(nameX, nameY, nameZ);
+
+    // 创建连接线（从星耀到名称）
+    const points = [];
+    // 从星耀顶部开始
+    const startX = boundedPosition.x;
+    const startZ = boundedPosition.z;
+    const startY = boundedPosition.y + 0.005; // 星耀顶部，适应极小的星耀
+    points.push(new THREE.Vector3(startX, startY, startZ));
+
+    // 添加中间点，创建曲线效果
+    const midX = (startX + nameX) / 2;
+    const midZ = (startZ + nameZ) / 2;
+    const midY = 0.5; // 中间点略微抬高，创建弧形效果
+    points.push(new THREE.Vector3(midX, midY, midZ));
+
+    points.push(new THREE.Vector3(nameX, nameY, nameZ));
+
+    // 使用CatmullRomCurve3创建平滑曲线
+    const curve = new THREE.CatmullRomCurve3(points);
+    const curvePoints = curve.getPoints(50); // 获取曲线上的点
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+    const lineMaterial = new THREE.LineBasicMaterial({
+      color: finalStarColor,
+      transparent: true,
+      opacity: 0.4
+    });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+
+    // 标记为星耀名称连接线，便于控制可见性
+    line.userData.isStarNameLine = true;
+
+    starSphere.position.y -= 0.5; // 调整小球位置，适应更小的球体和更大的名称
 
     // 创建星耀组
     const starGroup = new THREE.Group();
     starGroup.add(star);
-    starGroup.add(sprite);
+    starGroup.add(nameSprite);
+    starGroup.add(line); // 添加连接线
     starGroup.name = `star_${starName}`;
 
     // 添加到容器
@@ -759,19 +1003,19 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     while (starsContainer.children.length > 0) {
       const child = starsContainer.children[0];
       while (starsContainer.children.length > 0) {
-      const child = starsContainer.children[0];
-      if (child) {
-        starsContainer.remove(child);
-        
-        // 释放几何体和材质资源
-        if (child instanceof THREE.Mesh) {
-          child.geometry.dispose();
-          if (child.material instanceof THREE.Material) {
-            child.material.dispose();
+        const child = starsContainer.children[0];
+        if (child) {
+          starsContainer.remove(child);
+
+          // 释放几何体和材质资源
+          if (child instanceof THREE.Mesh) {
+            child.geometry.dispose();
+            if (child.material instanceof THREE.Material) {
+              child.material.dispose();
+            }
           }
         }
       }
-    }
 
       // 释放几何体和材质资源
       if (child instanceof THREE.Mesh) {
@@ -796,6 +1040,19 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
     this.addAnimationCallback(() => {
       if (this.stars) {
         this.stars.rotation.y += 0.0005;
+      }
+
+      // 确保所有星耀始终面向屏幕
+      if (this.ziWeiChart) {
+        this.ziWeiChart.traverse((child) => {
+          if (child instanceof THREE.Group && child.name.startsWith('stars_')) {
+            child.traverse((star) => {
+              if (star instanceof THREE.Sprite) {
+                // 精灵会自动面向摄像机，不需要额外处理
+              }
+            });
+          }
+        });
       }
     });
 
@@ -851,6 +1108,604 @@ export class EnhancedZiWeiSceneBase extends EnhancedThreeSceneBase {
       console.error(`加载模型失败: ${modelUrl}`, error);
       throw error;
     }
+  }
+
+  /**
+   * 清除所有宫位的高亮
+   */
+  private clearAllPalaceHighlights(): void {
+    this.palaces.forEach(palaceObj => {
+      palaceObj.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          // 恢复高亮材质
+          if (child.userData.originalMaterial) {
+            child.material = child.userData.originalMaterial;
+            delete child.userData.originalMaterial;
+          }
+        }
+      });
+    });
+  }
+
+  /**
+   * 显示三方四正关系
+   * @param palaceName 要显示三方四正的宫位名称
+   * @param highlight 是否高亮显示相关宫位
+   */
+  public showThreeSidesAndFourDirections(palaceName: string, highlight: boolean = true): void {
+    if (!this.ziWeiChart) {
+      console.error('紫微斗数盘未初始化');
+      return;
+    }
+
+    // 清除之前的三方四正连接线
+    this.clearThreeSidesAndFourDirections();
+
+    // 计算三方四正的宫位索引
+    // 在palaceNames数组中查找当前宫位的索引
+    const palaceIndex = this.palaceNames.indexOf(palaceName);
+    if (palaceIndex === -1) {
+      console.error(`找不到宫位: ${palaceName}`);
+      return;
+    }
+    
+    // 在紫微斗数中，三方四正是指本宫的对宫和三合宫
+    // 三方四正总共只有三条连接线：
+    // 1. 对宫：相隔6个宫位的一个宫位，形成180度对角关系
+    // 2. 第一个三合宫：相隔4个宫位，形成120度角关系
+    // 3. 第二个三合宫：相隔8个宫位，形成120度角关系
+    
+    // 计算对宫（相隔6个宫位，即180度对角）
+    const oppositeIndex = (palaceIndex + 6) % 12;
+    const oppositePalace = this.palaceNames[oppositeIndex]!;
+    
+    // 计算第一个三合宫（相隔4个宫位，形成120度角关系）
+    const firstTriadIndex = (palaceIndex + 4) % 12;
+    const firstTriadPalace = this.palaceNames[firstTriadIndex]!;
+    
+    // 计算第二个三合宫（相隔8个宫位，形成120度角关系）
+    const secondTriadIndex = (palaceIndex + 8) % 12;
+    const secondTriadPalace = this.palaceNames[secondTriadIndex]!;
+
+    // 宫位名称已在上面获取
+
+    // 创建不同类型的连接线材质，使用MeshStandardMaterial增强3D感
+    // 对宫连接线材质 - 绿色，使用标准材质增强3D感
+    const oppositeLineMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00FF00, // 纯绿色
+      metalness: 0.6, // 增加金属感
+      roughness: 0.3, // 减少粗糙度，增加光泽
+      emissive: 0x00FF00, // 发光颜色
+      emissiveIntensity: 0.3, // 发光强度
+      transparent: true,
+      opacity: 0.9
+    });
+    
+    // 为对宫连接线添加发光效果
+    const oppositeGlowMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00FF00, // 纯绿色
+      metalness: 0.8, // 更强的金属感
+      roughness: 0.2, // 更光滑
+      emissive: 0x00FF00, // 发光颜色
+      emissiveIntensity: 0.6, // 更强的发光
+      transparent: true,
+      opacity: 0.4
+    });
+
+    // 三合连接线材质 - 蓝色，使用标准材质增强3D感
+    const triadLineMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0099FF, // 亮蓝色
+      metalness: 0.5, // 金属感
+      roughness: 0.4, // 略微粗糙
+      emissive: 0x0099FF, // 发光颜色
+      emissiveIntensity: 0.2, // 发光强度
+      transparent: true,
+      opacity: 0.9
+    });
+    
+    // 为三合连接线添加发光效果
+    const triadGlowMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0099FF, // 亮蓝色
+      metalness: 0.7, // 更强的金属感
+      roughness: 0.3, // 更光滑
+      emissive: 0x0099FF, // 发光颜色
+      emissiveIntensity: 0.5, // 更强的发光
+      transparent: true,
+      opacity: 0.4
+    });
+
+    // 创建四正宫连接线材质 - 黄色
+    const quadrantLineMaterial = new THREE.MeshStandardMaterial({
+      color: 0xFFFF00, // 黄色
+      metalness: 0.5, // 金属感
+      roughness: 0.4, // 略微粗糙
+      emissive: 0xFFFF00, // 发光颜色
+      emissiveIntensity: 0.2, // 发光强度
+      transparent: true,
+      opacity: 0.9
+    });
+    
+    // 为四正宫连接线添加发光效果
+    const quadrantGlowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xFFFF00, // 黄色
+      metalness: 0.7, // 更强的金属感
+      roughness: 0.3, // 更光滑
+      emissive: 0xFFFF00, // 发光颜色
+      emissiveIntensity: 0.5, // 更强的发光
+      transparent: true,
+      opacity: 0.4
+    });
+    
+    // 创建三方四正的三条连接线，使用双层线条增强3D效果
+    // 1. 对宫连接线 - 绿色，先创建发光层
+    this.createPalaceConnection(palaceName, oppositePalace, oppositeGlowMaterial, 'opposite_glow');
+    // 再创建实线层
+    this.createPalaceConnection(palaceName, oppositePalace, oppositeLineMaterial, 'opposite');
+
+    // 2. 第一个三合宫连接线 - 蓝色，先创建发光层
+    this.createPalaceConnection(palaceName, firstTriadPalace, triadGlowMaterial, 'triad_glow');
+    // 再创建实线层
+    this.createPalaceConnection(palaceName, firstTriadPalace, triadLineMaterial, 'triad');
+    
+    // 3. 第二个三合宫连接线 - 蓝色，先创建发光层
+    this.createPalaceConnection(palaceName, secondTriadPalace, triadGlowMaterial, 'triad_glow');
+    // 再创建实线层
+    this.createPalaceConnection(palaceName, secondTriadPalace, triadLineMaterial, 'triad');
+
+
+    // 如果需要高亮显示相关宫位
+    if (highlight) {
+      // 清除所有之前的高亮由clearThreeSidesAndFourDirections方法处理
+      
+      // 高亮当前选中的宫位 - 金色，作为本宫标识，增加亮度使其更显眼
+      this.highlightPalace(palaceName, 0xFFD700, 0.7, 'main');
+
+      // 高亮对宫 - 绿色，作为对宫标识，增加亮度使其更显眼
+      this.highlightPalace(oppositePalace, 0x00FF00, 0.8, 'opposite');
+
+      // 高亮三合宫 - 蓝色，作为三合宫标识，增加亮度使其更显眼
+      this.highlightPalace(firstTriadPalace, 0x0099FF, 0.7, 'triad');
+      this.highlightPalace(secondTriadPalace, 0x0099FF, 0.7, 'triad');
+      
+      // 在命盘上添加颜色标记
+      this.addPalaceColorMarkers(palaceName, oppositePalace, firstTriadPalace, secondTriadPalace);
+    }
+  }
+
+  /**
+   * 创建两个宫位之间的连接线
+   * @param fromPalace 起始宫位名称
+   * @param toPalace 目标宫位名称
+   * @param material 连接线材质
+   * @param type 连接线类型
+   */
+  private createPalaceConnection(
+    fromPalace: string,
+    toPalace: string,
+    material: THREE.Material,
+    type: string
+  ): void {
+    if (!this.ziWeiChart) return;
+
+    const fromPalaceObj = this.palaces.get(fromPalace);
+    const toPalaceObj = this.palaces.get(toPalace);
+
+    if (!fromPalaceObj || !toPalaceObj) {
+      console.error(`找不到宫位: ${fromPalace} 或 ${toPalace}`);
+      return;
+    }
+
+    // 创建3D管道连接线，大幅增强立体感
+    const points = [];
+    const fromY = 0.5; // 起始高度
+    const toY = 0.5; // 结束高度
+    const midY = 1.5; // 提高中间最高点，增强3D效果
+    
+    // 添加起始点
+    points.push(new THREE.Vector3(fromPalaceObj.position.x, fromY, fromPalaceObj.position.z));
+    
+    // 添加多个中间控制点，创建更复杂的弧形效果
+    const midX = (fromPalaceObj.position.x + toPalaceObj.position.x) / 2;
+    const midZ = (fromPalaceObj.position.z + toPalaceObj.position.z) / 2;
+    points.push(new THREE.Vector3(midX * 0.7 + fromPalaceObj.position.x * 0.3, midY * 0.7, midZ * 0.7 + fromPalaceObj.position.z * 0.3));
+    points.push(new THREE.Vector3(midX, midY, midZ));
+    points.push(new THREE.Vector3(midX * 0.7 + toPalaceObj.position.x * 0.3, midY * 0.7, midZ * 0.7 + toPalaceObj.position.z * 0.3));
+    
+    // 添加结束点
+    points.push(new THREE.Vector3(toPalaceObj.position.x, toY, toPalaceObj.position.z));
+
+    // 使用CatmullRomCurve3创建平滑曲线
+    const curve = new THREE.CatmullRomCurve3(points);
+    
+    // 创建管道几何体，代替线条，增加厚度和3D感
+    const tubeRadius = type.includes('glow') ? 0.08 : 0.05; // 发光层更粗
+    const radialSegments = 8; // 圆周分段数
+    const tubularSegments = 50; // 管道分段数
+    const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, tubeRadius, radialSegments, false);
+    
+    // 创建管道网格
+    const tube = new THREE.Mesh(tubeGeometry, material);
+
+    // 标记为三方四正连接线
+    tube.userData.isThreeSidesAndFourDirections = true;
+    tube.userData.type = type;
+    tube.userData.fromPalace = fromPalace;
+    tube.userData.toPalace = toPalace;
+    
+    // 添加动态效果
+    tube.userData.time = 0;
+    tube.userData.animationSpeed = type.includes('glow') ? 0.02 : 0.01;
+    
+    // 添加动画更新函数
+    tube.userData.update = function() {
+      if (!this.userData) return;
+      this.userData.time += this.userData.animationSpeed;
+      // 创建呼吸灯效果
+      const breathingScale = 1 + Math.sin(this.userData.time) * 0.1;
+      this.scale.set(breathingScale, breathingScale, breathingScale);
+      
+      // 如果是发光层，增加旋转效果
+      if (this.userData.type && this.userData.type.includes('glow')) {
+        this.rotation.y += 0.005;
+      }
+    };
+
+    this.ziWeiChart.add(tube);
+    
+    // 添加粒子效果
+    this.createParticleEffect(curve, type);
+    
+    // 添加光晕效果
+    this.createGlowEffect(curve, type);
+    
+    // 如果这是第一个三方四正连接线，添加动画回调
+    if (!this.threeSidesAnimationAdded) {
+      this.threeSidesAnimationAdded = true;
+      this.addAnimationCallback(() => {
+        // 更新所有三方四正连接线的动画
+        this.ziWeiChart!.traverse((child) => {
+          if (child.userData.isThreeSidesAndFourDirections && child.userData.update) {
+            child.userData.update();
+          }
+        });
+      });
+    }
+  }
+
+  /**
+   * 创建粒子效果
+   * @param curve 曲线
+   * @param type 连接线类型
+   */
+  private createParticleEffect(curve: THREE.CatmullRomCurve3, type: string): void {
+    // 根据类型确定粒子颜色
+    const particleColor = type.includes('opposite') ? 0x00FF00 : 0x0099FF;
+    
+    // 创建粒子几何体
+    const particleCount = 100;
+    const particles = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    
+    // 初始化粒子位置和大小
+    for (let i = 0; i < particleCount; i++) {
+      const t = i / particleCount;
+      const point = curve.getPoint(t);
+      
+      // 添加随机偏移，使粒子围绕曲线分布
+      const randomOffset = new THREE.Vector3(
+        (Math.random() - 0.5) * 0.2,
+        (Math.random() - 0.5) * 0.2,
+        (Math.random() - 0.5) * 0.2
+      );
+      
+      point.add(randomOffset);
+      
+      positions[i * 3] = point.x;
+      positions[i * 3 + 1] = point.y;
+      positions[i * 3 + 2] = point.z;
+      
+      // 随机大小
+      sizes[i] = Math.random() * 0.1 + 0.05;
+    }
+    
+    particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particles.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    
+    // 创建粒子材质
+    const particleMaterial = new THREE.PointsMaterial({
+      color: particleColor,
+      size: 0.1,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    
+    // 创建粒子系统
+    const particleSystem = new THREE.Points(particles, particleMaterial);
+    
+    // 添加动画
+    particleSystem.userData.time = 0;
+    particleSystem.userData.speed = 0.01;
+    particleSystem.userData.update = function() {
+      if (!this.userData) return;
+      this.userData.time += this.userData.speed;
+      
+      // 更新粒子位置
+      const positions = this.geometry.attributes.position.array as Float32Array;
+      for (let i = 0; i < particleCount; i++) {
+        const t = (i / particleCount + this.userData.time) % 1;
+        const point = curve.getPoint(t);
+        
+        // 添加随机偏移
+        const randomOffset = new THREE.Vector3(
+          (Math.random() - 0.5) * 0.2,
+          (Math.random() - 0.5) * 0.2,
+          (Math.random() - 0.5) * 0.2
+        );
+        
+        point.add(randomOffset);
+        
+        positions[i * 3] = point.x;
+        positions[i * 3 + 1] = point.y;
+        positions[i * 3 + 2] = point.z;
+      }
+      
+      this.geometry.attributes.position.needsUpdate = true;
+    };
+    
+    // 标记为三方四正粒子效果
+    particleSystem.userData.isThreeSidesAndFourDirections = true;
+    
+    this.ziWeiChart!.add(particleSystem);
+  }
+  
+  /**
+   * 创建光晕效果
+   * @param curve 曲线
+   * @param type 连接线类型
+   */
+  private createGlowEffect(curve: THREE.CatmullRomCurve3, type: string): void {
+    // 根据类型确定光晕颜色
+    const glowColor = type.includes('opposite') ? 0x00FF00 : 0x0099FF;
+    
+    // 创建光晕点
+    const glowCount = 20;
+    const glowGroup = new THREE.Group();
+    
+    for (let i = 0; i < glowCount; i++) {
+      const t = i / glowCount;
+      const point = curve.getPoint(t);
+      
+      // 创建光晕球体
+      const glowGeometry = new THREE.SphereGeometry(0.05 + Math.random() * 0.05, 8, 8);
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: glowColor,
+        transparent: true,
+        opacity: 0.6
+      });
+      
+      const glowSphere = new THREE.Mesh(glowGeometry, glowMaterial);
+      glowSphere.position.copy(point);
+      
+      // 添加动画
+      glowSphere.userData.time = Math.random() * Math.PI * 2;
+      glowSphere.userData.speed = 0.02 + Math.random() * 0.02;
+      glowSphere.userData.baseScale = glowSphere.scale.x;
+      glowSphere.userData.update = function() {
+        if (!this.userData) return;
+        this.userData.time += this.userData.speed;
+        const scale = this.userData.baseScale * (1 + Math.sin(this.userData.time) * 0.3);
+        this.scale.set(scale, scale, scale);
+      };
+      
+      // 标记为三方四正光晕效果
+      glowSphere.userData.isThreeSidesAndFourDirections = true;
+      
+      glowGroup.add(glowSphere);
+    }
+    
+    // 标记为三方四正光晕组
+    glowGroup.userData.isThreeSidesAndFourDirections = true;
+    
+    this.ziWeiChart!.add(glowGroup);
+  }
+
+  /**
+   * 在命盘上添加颜色标记
+   * @param mainPalace 本宫名称
+   * @param oppositePalace 对宫名称
+   * @param firstTriadPalace 第一个三合宫名称
+   * @param secondTriadPalace 第二个三合宫名称
+   */
+  private addPalaceColorMarkers(
+    mainPalace: string,
+    oppositePalace: string,
+    firstTriadPalace: string,
+    secondTriadPalace: string
+  ): void {
+    if (!this.ziWeiChart) return;
+    
+    // 创建一个组来存放所有标记
+    const markersGroup = new THREE.Group();
+    markersGroup.userData.isThreeSidesAndFourDirectionsMarkers = true;
+    
+    // 为每个宫位添加颜色标记
+    this.addColorMarkerToPalace(mainPalace, 0xFFD700, markersGroup); // 金色
+    this.addColorMarkerToPalace(oppositePalace, 0x00FF00, markersGroup); // 绿色
+    this.addColorMarkerToPalace(firstTriadPalace, 0x0099FF, markersGroup); // 蓝色
+    this.addColorMarkerToPalace(secondTriadPalace, 0x0099FF, markersGroup); // 蓝色
+    
+    // 添加到场景
+    this.ziWeiChart.add(markersGroup);
+  }
+  
+  /**
+   * 为指定宫位添加颜色标记
+   * @param palaceName 宫位名称
+   * @param color 标记颜色
+   * @param group 标记组
+   */
+  private addColorMarkerToPalace(palaceName: string, color: number, group: THREE.Group): void {
+    const palaceObj = this.palaces.get(palaceName);
+    if (!palaceObj) return;
+    
+    // 创建一个小的球体作为标记
+    const markerGeometry = new THREE.SphereGeometry(0.15, 16, 16);
+    const markerMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(color),
+      emissive: new THREE.Color(color),
+      emissiveIntensity: 0.5,
+      metalness: 0.3,
+      roughness: 0.4
+    });
+    
+    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+    
+    // 设置标记位置（在宫位上方）
+    marker.position.set(
+      palaceObj.position.x,
+      0.5, // 高于宫位
+      palaceObj.position.z
+    );
+    
+    // 添加到组
+    group.add(marker);
+  }
+
+  /**
+   * 在命盘上添加颜色标记
+   * @param mainPalace 本宫名称
+   * @param oppositePalace 对宫名称
+   * @param firstTriadPalace 第一个三合宫名称
+   * @param secondTriadPalace 第二个三合宫名称
+   */
+ 
+
+  /**
+   * 高亮显示指定宫位
+   * @param palaceName 宫位名称
+   * @param color 高亮颜色
+   * @param intensity 高亮强度
+   * @param type 高亮类型（main/opposite/triad）
+   */
+  private highlightPalace(palaceName: string, color: number, intensity: number, type: string = ''): void {
+    const palaceObj = this.palaces.get(palaceName);
+    if (!palaceObj) return;
+
+    // 遍历宫位对象，找到宫位底座
+    palaceObj.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.geometry instanceof THREE.ShapeGeometry) {
+        // 获取当前材质
+        const currentMaterial = child.material as THREE.MeshStandardMaterial;
+        
+        // 只有当没有保存原始材质时才保存
+        if (!child.userData.originalMaterial) {
+          child.userData.originalMaterial = currentMaterial;
+        }
+        
+        // 创建高亮材质
+        const originalMaterial = child.userData.originalMaterial as THREE.MeshStandardMaterial;
+        const highlightMaterial = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(color),
+          emissive: new THREE.Color(color),
+          emissiveIntensity: intensity,
+          metalness: originalMaterial.metalness,
+          roughness: originalMaterial.roughness,
+          transparent: true,
+          opacity: 0.8
+        });
+        
+        // 释放当前高亮材质资源（如果当前材质不是原始材质）
+        if (currentMaterial !== originalMaterial) {
+          if (currentMaterial.map) currentMaterial.map.dispose();
+          currentMaterial.dispose();
+        }
+        
+        // 应用高亮材质
+        child.material = highlightMaterial;
+      }
+    });
+  }
+
+  /**
+   * 清除三方四正连接线和高亮
+   */
+  public clearThreeSidesAndFourDirections(): void {
+    if (!this.ziWeiChart) return;
+
+    // 移除所有三方四正效果（包括管道、粒子和光晕）
+    const objectsToRemove: THREE.Object3D[] = [];
+    this.ziWeiChart.traverse((child) => {
+      if (child.userData.isThreeSidesAndFourDirections) {
+        objectsToRemove.push(child);
+      }
+    });
+
+    objectsToRemove.forEach(obj => {
+      this.ziWeiChart!.remove(obj);
+      
+      // 释放几何体和材质资源
+      if (obj instanceof THREE.Mesh) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material instanceof THREE.Material) obj.material.dispose();
+      } else if (obj instanceof THREE.Points) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material instanceof THREE.Material) obj.material.dispose();
+      } else if (obj instanceof THREE.Line) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material instanceof THREE.Material) obj.material.dispose();
+      }
+    });
+    
+    // 重置动画标志
+    this.threeSidesAnimationAdded = false;
+    
+    // 移除所有颜色标记
+    const markersToRemove: THREE.Object3D[] = [];
+    this.ziWeiChart.traverse((child) => {
+      if (child.userData.isThreeSidesAndFourDirectionsMarkers) {
+        markersToRemove.push(child);
+      }
+    });
+
+    markersToRemove.forEach(group => {
+      this.ziWeiChart!.remove(group);
+      
+      // 清理组中的所有标记
+      group.traverse((marker) => {
+        if (marker instanceof THREE.Mesh) {
+          if (marker.geometry) marker.geometry.dispose();
+          if (marker.material instanceof THREE.Material) marker.material.dispose();
+        }
+      });
+    });
+
+    // 恢复所有宫位的原始材质
+    this.palaces.forEach(palaceObj => {
+      palaceObj.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          // 递归查找最原始的材质，确保正确恢复
+          let currentMaterial = child.material as THREE.MeshStandardMaterial;
+          let originalMaterial = child.userData.originalMaterial;
+          
+          // 如果有原始材质，则恢复它
+          if (originalMaterial) {
+            // 释放当前高亮材质资源
+            if (currentMaterial && currentMaterial !== originalMaterial) {
+              if (currentMaterial.map) currentMaterial.map.dispose();
+              currentMaterial.dispose();
+            }
+            
+            // 恢复原始材质
+            child.material = originalMaterial;
+            // 清除userData中的originalMaterial引用
+            delete child.userData.originalMaterial;
+          }
+        }
+      });
+    });
   }
 
   /**
